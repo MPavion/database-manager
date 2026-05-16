@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+
+# Secrets and local config
+.env
+secret.key
+
+# PyInstaller build output
+build/
+dist/
+*.exe
+*.spec
+
+# Test cache
+.pytest_cache/
+
+# App runtime files
+results/
+notion_local_sync.lock
+*.lock
+output.txt
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# IDE
+.vscode/settings.json

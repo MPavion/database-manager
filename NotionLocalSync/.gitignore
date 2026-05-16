@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+secret.key
+data/media/
+data/backups/
+logs/
+results/
+.DS_Store
+.bootstrap_complete
+notion_local_sync.lock
+*.lock
+output.txt
