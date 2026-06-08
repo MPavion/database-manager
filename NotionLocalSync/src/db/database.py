@@ -1778,6 +1778,36 @@ class DatabaseManager:
             logger.error(f"Failed to clear pushed-page flags: {e}")
             return False
 
+    def tombstone_missing_pages(self, notion_ids: list[str]) -> bool:
+        """Deactivate local rows whose Notion pages no longer exist (deleted or
+        archived). Clears needs_push and tombstones the row (is_active = FALSE)
+        so the push loop stops retrying them on every cycle. Sets the 'push'
+        sync origin so the before-update trigger does not re-arm needs_push."""
+        if not self.conn or not notion_ids:
+            return False
+
+        try:
+            with self.conn:
+                with self.conn.cursor() as cur:
+                    cur.execute("SET LOCAL app.sync_origin = 'push'")
+                    cur.execute(
+                        """
+                        UPDATE workspace_mirror
+                        SET needs_push = FALSE,
+                            is_active = FALSE,
+                            valid_to = now(),
+                            updated_at = now()
+                        WHERE is_active = TRUE AND notion_id = ANY(%s)
+                        """,
+                        (notion_ids,),
+                    )
+            return True
+        except Exception as e:
+            if self.conn:
+                self.conn.rollback()
+            logger.error(f"Failed to tombstone missing pages: {e}")
+            return False
+
     def run_maintenance(self, retention_days: int = 45, min_versions_to_keep: int = 5) -> tuple[bool, str, dict]:
         if not self.conn:
             return False, "Local database clean-up is not available until PostgreSQL is connected.", {}
