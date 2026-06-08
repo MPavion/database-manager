@@ -11,6 +11,7 @@ from pathlib import Path
 
 import requests
 from notion_client import Client
+from notion_client.errors import APIResponseError
 
 from src.core.config import MEDIA_DIR, get_env, get_secret, logger
 from src.core.http import build_retry_session
@@ -1542,6 +1543,23 @@ class SyncEngine:
         self._log_notion_sync_run("pull", "warning" if failures else "success", self.last_summary, pull_details)
         return True
 
+    @staticmethod
+    def _is_page_gone(error):
+        """Return True when a Notion API error means the page no longer exists
+        (deleted, unshared from the integration, or archived/in trash) and a
+        push should not be retried. Transient errors (timeouts, 429, 5xx) return
+        False so they keep retrying."""
+        code = getattr(error, "code", None)
+        status = getattr(error, "status", None)
+        message = str(error).lower()
+        if code == "object_not_found" or status == 404 or "could not find page" in message:
+            return True
+        if "object_not_found" in message:
+            return True
+        if "archived" in message or "in trash" in message or "is in the trash" in message:
+            return True
+        return False
+
     def push_to_notion(self):
         if not self.notion:
             self.last_summary = "Push failed: Notion is not configured yet."
@@ -1562,6 +1580,8 @@ class SyncEngine:
         skipped_count = 0
         conflict_count = 0
         failure_count = 0
+        gone_ids = []
+        gone_count = 0
         self.conflicts = []
         normalizer = getattr(self.db, "_normalize_timestamp", DatabaseManager._normalize_timestamp)
 
@@ -1589,6 +1609,14 @@ class SyncEngine:
                     )
                     continue
             except Exception as exc:
+                if self._is_page_gone(exc):
+                    gone_ids.append(notion_id)
+                    gone_count += 1
+                    logger.warning(
+                        f"Page {notion_id} no longer exists in Notion (deleted/archived); "
+                        f"tombstoning locally to stop further push attempts: {exc}"
+                    )
+                    continue
                 logger.warning(f"Could not confirm remote edit state for page {notion_id} before push: {exc}")
 
             properties = self._build_push_properties(record)
@@ -1601,8 +1629,16 @@ class SyncEngine:
                 self.notion.pages.update(page_id=notion_id, properties=properties)
                 updated_ids.append(notion_id)
             except Exception as e:
-                failure_count += 1
-                logger.error(f"Push to Notion failed for page {notion_id}: {e}")
+                if self._is_page_gone(e):
+                    gone_ids.append(notion_id)
+                    gone_count += 1
+                    logger.warning(
+                        f"Page {notion_id} no longer exists in Notion (deleted/archived); "
+                        f"tombstoning locally to stop further push attempts: {e}"
+                    )
+                else:
+                    failure_count += 1
+                    logger.error(f"Push to Notion failed for page {notion_id}: {e}")
 
         local_mark_failed = False
         if updated_ids:
@@ -1611,23 +1647,32 @@ class SyncEngine:
                 failure_count += len(updated_ids)
                 logger.warning("Notion updates succeeded, but the local push confirmation step failed. Those pages may still appear as pending until the next refresh.")
 
+        if gone_ids:
+            if not self.db.tombstone_missing_pages(gone_ids):
+                logger.warning(
+                    "Detected pages missing from Notion, but the local tombstone step failed. "
+                    "They may continue to appear as pending until the next refresh."
+                )
+
         self.last_run_stats["push"] = {
             "attempted": len(records),
             "updated": len(updated_ids),
             "failed": failure_count,
             "skipped": skipped_count,
             "conflicts": conflict_count,
+            "gone": gone_count,
         }
         local_note = " Local confirmation needs attention." if local_mark_failed else ""
         self.last_summary = (
-            f"Pushed {len(updated_ids)} page(s) to Notion, skipped {skipped_count}, conflicts {conflict_count}, failed {failure_count}.{local_note}"
+            f"Pushed {len(updated_ids)} page(s) to Notion, skipped {skipped_count}, "
+            f"conflicts {conflict_count}, gone {gone_count}, failed {failure_count}.{local_note}"
         )
         logger.info(self.last_summary)
         push_success = failure_count == 0 or bool(updated_ids)
         push_status = "success"
         if not push_success:
             push_status = "failed"
-        elif failure_count or conflict_count:
+        elif failure_count or conflict_count or gone_count:
             push_status = "warning"
 
         self._log_notion_sync_run(
