@@ -53,29 +53,83 @@ class SyncEngine:
                            if isinstance(p, dict)).strip() or fallback
         return fallback
 
+    def _notion_headers(self) -> dict:
+        token   = get_secret("NOTION_TOKEN", encrypted_key="NOTION_TOKEN_ENCRYPTED")
+        version = get_env("NOTION_VERSION", "2022-06-28")
+        return {
+            "Authorization":  f"Bearer {token}",
+            "Content-Type":   "application/json",
+            "Notion-Version": version,
+        }
+
     def _retrieve_schema(self, db_id: str) -> dict:
         if not self.notion or not db_id:
             return {}
-        try:
-            return self.notion.data_sources.retrieve(data_source_id=db_id)
-        except Exception:
+        base = get_env("NOTION_API_BASE", "https://api.notion.com/v1").rstrip("/")
+
+        for fn in [
+            lambda: self.notion.data_sources.retrieve(data_source_id=db_id),
+            lambda: self.notion.databases.retrieve(database_id=db_id),
+        ]:
             try:
-                return self.notion.databases.retrieve(database_id=db_id)
-            except Exception as exc:
-                logger.warning(f"Could not retrieve schema for {db_id}: {exc}")
-                return {}
+                result = fn()
+                if isinstance(result, dict):
+                    return result
+            except Exception:
+                pass
+
+        # Final fallback: raw HTTP GET /databases/{id}
+        try:
+            resp = self.http.get(f"{base}/databases/{db_id}",
+                                  headers=self._notion_headers(), timeout=15)
+            resp.raise_for_status()
+            result = resp.json()
+            if isinstance(result, dict):
+                return result
+        except Exception as exc:
+            logger.warning(f"Could not retrieve schema for {db_id}: {exc}")
+        return {}
 
     def _query_pages(self, db_id: str, schema: dict | None = None) -> list[dict]:
         results: list[dict] = []
-        cursor = None
+        cursor  = None
+        base    = get_env("NOTION_API_BASE", "https://api.notion.com/v1").rstrip("/")
+
         while True:
             args: dict = {"page_size": 100}
             if cursor:
                 args["start_cursor"] = cursor
+
+            resp = None
+
+            # Primary path: data_sources.query (works for most databases in this SDK version)
             try:
-                resp = self.notion.data_sources.query(data_source_id=db_id, **args)
+                r = self.notion.data_sources.query(data_source_id=db_id, **args)
+                if isinstance(r, dict):
+                    resp = r
             except Exception:
-                resp = self.notion.databases.query(database_id=db_id, **args)
+                pass
+
+            # Fallback: raw HTTP POST /databases/{id}/query
+            if resp is None:
+                try:
+                    r = self.http.post(
+                        f"{base}/databases/{db_id}/query",
+                        headers=self._notion_headers(),
+                        json=args,
+                        timeout=30,
+                    )
+                    r.raise_for_status()
+                    decoded = r.json()
+                    if isinstance(decoded, dict):
+                        resp = decoded
+                except Exception as exc:
+                    logger.warning(f"Could not query database {db_id}: {exc}")
+                    break
+
+            if resp is None:
+                break
+
             results.extend(r for r in resp.get("results", []) if isinstance(r, dict))
             if not resp.get("has_more"):
                 break
@@ -247,8 +301,10 @@ class SyncEngine:
 
     # ── Schema description ────────────────────────────────────────────────────
     def _describe_schema(self, schema: dict, db_id: str) -> tuple[str, str]:
+        if not isinstance(schema, dict):
+            return f"Database {db_id}", ""
         title = self._extract_title(schema, fallback=f"Database {db_id}")
-        props = (schema or {}).get("properties", {}) or {}
+        props = schema.get("properties", {}) or {}
         lines = [f"Database schema for {title}"]
         for name, prop in sorted((props or {}).items(), key=lambda x: x[0].lower())[:25]:
             if not isinstance(prop, dict):
