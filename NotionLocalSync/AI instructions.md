@@ -4,12 +4,14 @@ This file is a quick reference for Claude when connected to the local Notion mir
 
 ## What this connection is
 
-The app mirrors your entire Notion workspace into a local PostgreSQL database and exposes it through 6 MCP tools. Local queries are ~10–100× faster than hitting the Notion API directly and use far fewer tokens because the index is pre-built.
+The app mirrors your entire Notion workspace into a local PostgreSQL database and exposes it through 5 read-only MCP tools. Local queries are ~10–100× faster than hitting the Notion API directly and use far fewer tokens because the index is pre-built.
+
+**The local DB is read-only.** Claude reads from it; any writes (page edits, status updates, new content) must go through Claude Desktop's native Notion integration. This preserves page layout, block structure, and inter-page links. The local DB picks up those changes on the next pull cycle.
 
 ## MCP server name
 `Notion Local DB`
 
-## The 6 tools
+## The 5 tools
 
 ### `get_stats()`
 Start here. Returns page count, pending pushes, media pages, last sync time, and whether the DB is connected. If `last_sync` is recent and `active_pages > 0`, the local mirror is ready to use.
@@ -35,18 +37,16 @@ Full page content: title, AI summary (extracted properties + page body text), al
 ### `list_recent(limit=20)`
 Pages sorted by most recently updated. Useful for "what has changed?" or "what was I working on?" queries.
 
-### `push_update(notion_id, title, summary)`
-Write a title or summary change back to Notion. The local record is updated and flagged for push; the tool then immediately attempts to push it to Notion.
-
 ## Recommended session flow
 
 ```
-get_stats()           → confirm mirror is live and fresh
-get_index()           → load workspace map (do this once per session)
-search("topic")       → if you need to find something specific
-get_page(notion_id)   → only for pages you've chosen to read in full
-push_update(...)      → when making changes
+get_stats()          → confirm mirror is live and fresh
+get_index()          → load workspace map (do this once per session)
+search("topic")      → if you need to find something specific
+get_page(notion_id)  → only for pages you've chosen to read in full
 ```
+
+To **write** to Notion, use Claude Desktop's native Notion integration — not this local DB. This ensures page layout, block structure, and inter-page links are preserved correctly. The local DB will reflect the change after the next pull cycle.
 
 ## Fallback behaviour
 

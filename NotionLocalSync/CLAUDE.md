@@ -16,6 +16,10 @@ Start cheap; fetch detail only when needed.
 4. get_page(id)     → full page content once you know which page you need
 ```
 
+## Architecture: read-only mirror
+
+The local DB is a **read-only mirror** of Notion. Claude reads from it; writes go directly to Notion via Claude Desktop's native Notion integration. This preserves page layout, block structure, and inter-page links. The DB picks up changes on the next pull cycle.
+
 ## Available MCP tools
 
 | Tool | When to use |
@@ -25,7 +29,6 @@ Start cheap; fetch detail only when needed.
 | `search(query, limit=10)` | Keyword/full-text search; returns ranked results with keywords and summaries |
 | `get_page(notion_id)` | Full content for one page: title, AI summary, all properties, media paths |
 | `list_recent(limit=20)` | Pages sorted by most recently updated — useful for "what changed?" |
-| `push_update(notion_id, title, summary)` | Write a title or summary edit back to Notion |
 
 All tools fall back to the live Notion API if the local DB is unreachable, so Claude is never left with nothing.
 

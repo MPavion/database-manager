@@ -47,25 +47,25 @@ Right-click the tray icon to force a sync, open Settings, or quit.
 
 ## MCP tools for Claude Desktop
 
-Once connected, Claude Desktop has access to 6 tools. All try the local DB first and fall back to the Notion API if the DB is unavailable.
+The local DB is **read-only**. Claude reads from it; any writes go directly to Notion via Claude Desktop's native Notion integration (which preserves page layout, block structure, and inter-page links). The DB picks up those changes on the next pull cycle.
+
+Once connected, Claude Desktop has access to 5 read tools. All try the local DB first and fall back to the Notion API if the DB is unavailable.
 
 | Tool | Description |
 |------|-------------|
+| `get_stats()` | Page count, media pages, last sync time — confirms the mirror is live |
 | `get_index()` | Full workspace map in one call — title, keywords, summary, page type, token estimate for every page |
 | `search(query, limit)` | Ranked full-text + keyword search |
 | `get_page(notion_id)` | Complete page content — title, AI summary, all properties, media paths, raw JSON |
 | `list_recent(limit)` | Most recently updated pages |
-| `push_update(notion_id, title, summary)` | Write title/summary back to Notion |
-| `get_stats()` | Page count, pending pushes, media pages, last sync time |
 
 ### Recommended Claude query flow
 
 ```
-1. get_stats()        → check how fresh the local mirror is
-2. get_index()        → load the complete workspace map (keywords, summaries)
-3. search("topic")    → narrow to specific pages if needed
-4. get_page(id)       → fetch full content for one page
-5. push_update(id, …) → write back any changes
+1. get_stats()     → confirm mirror is fresh
+2. get_index()     → load the complete workspace map (keywords, summaries)
+3. search("topic") → narrow to specific pages if needed
+4. get_page(id)    → fetch full content for one page
 ```
 
 `get_index()` returns a compact entry per page (not the full JSON) — use it as a table of contents before deciding which pages to fetch in full. This is significantly faster and cheaper than querying Notion directly for every lookup.
