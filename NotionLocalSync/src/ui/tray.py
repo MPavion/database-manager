@@ -49,6 +49,30 @@ def _make_traffic_icon(colour: str) -> QIcon:
     return QIcon(pm)
 
 
+def _brand_icon_with_dot(brand_path: str, colour: str) -> QIcon:
+    """Load the brand image and overlay a small status dot in the bottom-right."""
+    base = QPixmap(brand_path).scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    if base.isNull():
+        return _make_traffic_icon(colour)
+
+    pm = QPixmap(64, 64)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.drawPixmap(0, 0, base)
+
+    # Small dot: 18×18 at bottom-right with a thin white ring for visibility
+    dot_size   = 18
+    dot_margin = 2
+    x = 64 - dot_size - dot_margin
+    y = 64 - dot_size - dot_margin
+    p.setPen(QPen(QColor(255, 255, 255, 200), 2))
+    p.setBrush(QBrush(_PALETTE.get(colour, _PALETTE["green"])))
+    p.drawEllipse(x, y, dot_size, dot_size)
+    p.end()
+    return QIcon(pm)
+
+
 # ── Background sync worker ────────────────────────────────────────────────────
 class _SyncWorker(QThread):
     done = Signal(bool, str)   # (success, summary_message)
@@ -99,7 +123,7 @@ class TrayApp(QSystemTrayIcon):
         from src.core.config import get_tray_icon_path
         brand_path = get_tray_icon_path()
         if brand_path:
-            self.setIcon(QIcon(str(brand_path)))
+            self.setIcon(_brand_icon_with_dot(str(brand_path), colour))
         else:
             self.setIcon(_make_traffic_icon(colour))
 
