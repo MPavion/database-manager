@@ -235,6 +235,28 @@ class SettingsDialog(QDialog):
 
         root.addWidget(backup_box)
 
+        # ── AI Self-Healing ───────────────────────────────────────────────────
+        ai_box, ai_form = _make_group("AI Self-Healing")
+
+        ai_note = QLabel(
+            "When sync errors occur, the app can automatically diagnose and patch "
+            "the source code using Claude Opus 4.7. Provide an Anthropic API key to "
+            "enable this feature. Each unique error pattern is only analysed once."
+        )
+        ai_note.setWordWrap(True)
+        ai_note.setStyleSheet("color: #888; font-size: 11px;")
+        ai_form.addRow("", ai_note)
+
+        self._anthropic_key = QLineEdit()
+        self._anthropic_key.setEchoMode(QLineEdit.Password)
+        self._anthropic_key.setPlaceholderText("sk-ant-…")
+        ai_form.addRow("Anthropic API Key:", self._anthropic_key)
+
+        self._healer_enabled = QCheckBox("Enable auto-healing on sync errors")
+        ai_form.addRow("", self._healer_enabled)
+
+        root.addWidget(ai_box)
+
         # ── Claude MCP ────────────────────────────────────────────────────────
         mcp_box, mcp_form = _make_group("Claude Desktop MCP")
 
@@ -290,6 +312,12 @@ class SettingsDialog(QDialog):
         except ValueError:
             self._backup_retention.setValue(7)
         self._backup_hour.setValue(get_backup_hour())
+
+        self._anthropic_key.setText(
+            get_secret("ANTHROPIC_API_KEY", encrypted_key="ANTHROPIC_API_KEY_ENCRYPTED")
+        )
+        healer_on = get_env("ANTHROPIC_HEALER_ENABLED", "1").strip().lower() not in {"0", "false", "off", "no"}
+        self._healer_enabled.setChecked(healer_on)
 
         self._mcp_name.setText(get_env("CLAUDE_MCP_NAME", "Notion Local DB"))
 
@@ -379,6 +407,11 @@ class SettingsDialog(QDialog):
             save_env_var("BACKUP_DIR",             self._backup_dir.text().strip())
             save_env_var("BACKUP_RETENTION_DAYS", str(self._backup_retention.value()))
             save_env_var("BACKUP_HOUR",            str(self._backup_hour.value()))
+
+            save_secret("ANTHROPIC_API_KEY", self._anthropic_key.text().strip(),
+                         encrypted_key="ANTHROPIC_API_KEY_ENCRYPTED")
+            save_env_var("ANTHROPIC_HEALER_ENABLED",
+                          "1" if self._healer_enabled.isChecked() else "0")
 
             mcp_name = self._mcp_name.text().strip() or "Notion Local DB"
             save_env_var("CLAUDE_MCP_NAME", mcp_name)

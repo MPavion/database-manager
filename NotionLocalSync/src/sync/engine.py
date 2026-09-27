@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import re
+import traceback as _traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -376,6 +377,7 @@ class SyncEngine:
         logger.info(f"Pull starting — {len(target_ids)} database(s)...")
         total_seen = total_changed = total_skipped = total_failed = 0
         failed_dbs: list[str] = []
+        _healer_errors: list[tuple[str, str, str, str]] = []  # (db_id, type, msg, tb)
 
         for db_id in target_ids:
             try:
@@ -451,11 +453,25 @@ class SyncEngine:
             except Exception as exc:
                 failed_dbs.append(db_id)
                 logger.error(f"Pull failed for database {db_id}: {exc}")
+                _healer_errors.append((
+                    db_id,
+                    type(exc).__name__,
+                    str(exc),
+                    _traceback.format_exc(),
+                ))
 
         self.last_run_stats["pull"] = {
             "seen": total_seen, "changed": total_changed,
             "skipped": total_skipped, "failed": len(failed_dbs),
         }
+
+        # Invoke self-healing agent for any new persistent DB-level errors
+        if _healer_errors:
+            try:
+                from src.sync.healer import SyncHealer
+                SyncHealer().heal(_healer_errors)
+            except Exception as heal_exc:
+                logger.warning(f"Healer invocation failed: {heal_exc}")
 
         if failed_dbs and total_changed == 0 and total_seen == 0:
             self.last_summary = "Pull failed for all databases."

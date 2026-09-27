@@ -62,6 +62,10 @@ DEFAULT_ENV = {
     "BACKUP_RETENTION_DAYS": "7",
     "BACKUP_HOUR":            "2",   # 2 AM local time
     "PG_DUMP_PATH":           "",
+    # Self-healing agent
+    "ANTHROPIC_API_KEY":           "",
+    "ANTHROPIC_API_KEY_ENCRYPTED": "",
+    "ANTHROPIC_HEALER_ENABLED":    "1",
 }
 
 # Ensure runtime directories exist

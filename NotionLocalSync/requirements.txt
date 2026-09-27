@@ -7,3 +7,4 @@ cryptography>=45,<47
 boto3>=1.36,<2
 paramiko>=3.5,<5
 mcp>=1,<2
+anthropic>=0.40.0,<2
