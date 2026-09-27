@@ -1,13 +1,15 @@
 """
 MCP server for Claude Desktop.
 
+The local DB is a read-only mirror of Notion. Claude reads from it; any
+writes go directly to Notion via Claude Desktop's native Notion integration.
+
 Tools:
-  get_index       – full keyword index (one call → complete workspace map)
-  search          – ranked full-text + keyword search
-  get_page        – full page content + media paths
-  list_recent     – most recently updated pages
-  push_update     – write title/summary back to Notion
-  get_stats       – quick counts
+  get_index    – full keyword index (one call → complete workspace map)
+  search       – ranked full-text + keyword search
+  get_page     – full page content + media paths
+  list_recent  – most recently updated pages
+  get_stats    – quick counts
 
 All tools try the local PostgreSQL DB first; if unavailable they fall back to
 the Notion API so Claude is never left with nothing.
@@ -27,14 +29,12 @@ from mcp.server.fastmcp import FastMCP
 from src.core.config import get_env, get_secret, load_config, logger
 from src.core.http import build_retry_session
 from src.db.database import DatabaseManager
-from src.sync.engine import SyncEngine
 
 load_config()
 mcp = FastMCP(get_env("CLAUDE_MCP_NAME", "Notion Local DB"))
 
-# Module-level singletons reused across tool calls
-_db:     DatabaseManager | None = None
-_engine: SyncEngine | None      = None
+# Module-level singleton reused across tool calls
+_db: DatabaseManager | None = None
 
 
 def _get_db() -> DatabaseManager:
@@ -44,13 +44,6 @@ def _get_db() -> DatabaseManager:
     if not _db.is_connected():
         _db.connect()
     return _db
-
-
-def _get_engine() -> SyncEngine:
-    global _engine
-    if _engine is None:
-        _engine = SyncEngine(_get_db())
-    return _engine
 
 
 def _notion_headers() -> dict:
@@ -319,49 +312,6 @@ def list_recent(limit: int = 20) -> dict:
 
 
 @mcp.tool()
-def push_update(notion_id: str, title: str | None = None,
-                summary: str | None = None) -> dict:
-    """
-    Write a title or summary update back to Notion for a page already in the
-    local DB.  The local record is flagged needs_push and the next sync will
-    propagate it, or you can call this to push immediately.
-    """
-    nid = (notion_id or "").strip()
-    if not nid:
-        return {"error": "notion_id is required"}
-    if not title and not summary:
-        return {"error": "Provide at least one of title or summary to update."}
-
-    try:
-        db  = _get_db()
-        row = db.get_page(nid)
-        if not row:
-            return {"error": f"Page {nid} not found in local DB."}
-
-        from src.db.change_tracking import build_local_edit_payload
-        payload = build_local_edit_payload(row, title=title, ai_summary=summary)
-        ok = db.upsert_page(
-            notion_id         = nid,
-            title             = payload["title"],
-            ai_summary        = payload["ai_summary"],
-            raw_json          = payload["raw_json"],
-            media_paths       = payload.get("media_local_paths") or [],
-            content_hash      = payload["content_hash"],
-            source_updated_at = str(row.get("source_updated_at") or ""),
-            needs_push        = True,
-        )
-        if not ok:
-            return {"error": "Failed to save update to local DB."}
-
-        # Attempt immediate push
-        engine = _get_engine()
-        engine.push_to_notion()
-        return {"status": "ok", "notion_id": nid, "pushed": True}
-    except Exception as exc:
-        return {"error": str(exc)}
-
-
-@mcp.tool()
 def get_stats() -> dict:
     """
     Return basic workspace statistics: page count, pending pushes, media pages,
@@ -373,12 +323,11 @@ def get_stats() -> dict:
             stats = db.get_stats()
             last  = db.get_last_pull_time()
             return {
-                "source":          "local_db",
-                "db_connected":    True,
-                "active_pages":    int(stats.get("active_pages") or 0),
-                "pending_push":    int(stats.get("pending_push") or 0),
+                "source":           "local_db",
+                "db_connected":     True,
+                "active_pages":     int(stats.get("active_pages") or 0),
                 "pages_with_media": int(stats.get("pages_with_media") or 0),
-                "last_sync":       str(last) if last else "never",
+                "last_sync":        str(last) if last else "never",
             }
     except Exception as exc:
         logger.warning(f"get_stats: {exc}")

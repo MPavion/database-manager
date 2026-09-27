@@ -36,9 +36,6 @@ UPDATE workspace_mirror SET pulled_at  = COALESCE(pulled_at, now())             
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notion_id_active
     ON workspace_mirror(notion_id) WHERE is_active = TRUE;
 
-CREATE INDEX IF NOT EXISTS idx_workspace_mirror_needs_push
-    ON workspace_mirror(needs_push) WHERE is_active = TRUE AND needs_push = TRUE;
-
 CREATE INDEX IF NOT EXISTS idx_workspace_mirror_updated_at
     ON workspace_mirror(updated_at DESC);
 
@@ -90,19 +87,11 @@ RETURNS JSONB LANGUAGE sql IMMUTABLE AS $$
     SELECT CASE WHEN jsonb_typeof(v) = 'object' THEN v ELSE '{}'::jsonb END;
 $$;
 
--- ─── Trigger: stamp updated_at; flag local edits for push ─────────────────────
+-- ─── Trigger: stamp updated_at on every row update ───────────────────────────
 CREATE OR REPLACE FUNCTION workspace_mirror_before_update()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     NEW.updated_at = now();
-    IF OLD.is_active = TRUE
-       AND (   OLD.title      IS DISTINCT FROM NEW.title
-            OR OLD.ai_summary IS DISTINCT FROM NEW.ai_summary
-            OR OLD.raw_json   IS DISTINCT FROM NEW.raw_json)
-       AND COALESCE(current_setting('app.sync_origin', true), '') NOT IN ('notion', 'push')
-    THEN
-        NEW.needs_push = TRUE;
-    END IF;
     RETURN NEW;
 END;
 $$;
