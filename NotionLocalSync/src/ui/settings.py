@@ -17,8 +17,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.core.config import (
+    get_backup_hour,
     get_env,
     get_secret,
     is_windows_startup_enabled,
@@ -78,6 +81,18 @@ class _DbTestWorker(QThread):
             )
             conn.close()
             self.done.emit(True, "Connection successful.")
+        except Exception as exc:
+            self.done.emit(False, str(exc))
+
+
+class _BackupWorker(QThread):
+    done = Signal(bool, str)
+
+    def run(self):
+        try:
+            from src.db.backup import BackupManager
+            ok, msg = BackupManager().run_backup()
+            self.done.emit(ok, msg)
         except Exception as exc:
             self.done.emit(False, str(exc))
 
@@ -175,6 +190,51 @@ class SettingsDialog(QDialog):
 
         root.addWidget(sync_box)
 
+        # ── Backup ────────────────────────────────────────────────────────────
+        backup_box, backup_form = _make_group("Backup")
+
+        backup_note = QLabel(
+            "PostgreSQL stores its data in a server-managed directory — do not "
+            "point that at Google Drive. Instead, choose a backup folder here. "
+            "The app exports a portable pg_dump file each night at the scheduled "
+            "hour and keeps the most recent N days. A Google Drive folder works "
+            "perfectly as the backup destination."
+        )
+        backup_note.setWordWrap(True)
+        backup_note.setStyleSheet("color: #888; font-size: 11px;")
+        backup_form.addRow("", backup_note)
+
+        folder_row = QWidget()
+        folder_layout = QHBoxLayout(folder_row)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
+        self._backup_dir = QLineEdit()
+        self._backup_dir.setPlaceholderText("e.g. G:\\My Drive\\Backups\\NotionDB")
+        folder_browse = QPushButton("Browse…")
+        folder_browse.setFixedWidth(72)
+        folder_browse.clicked.connect(self._browse_backup_dir)
+        folder_layout.addWidget(self._backup_dir)
+        folder_layout.addWidget(folder_browse)
+        backup_form.addRow("Backup folder:", folder_row)
+
+        self._backup_retention = QSpinBox()
+        self._backup_retention.setRange(1, 365)
+        self._backup_retention.setSuffix(" days")
+        backup_form.addRow("Keep backups for:", self._backup_retention)
+
+        self._backup_hour = QSpinBox()
+        self._backup_hour.setRange(0, 23)
+        self._backup_hour.setSuffix(":00 (local)")
+        backup_form.addRow("Run daily at:", self._backup_hour)
+
+        self._backup_status = _status_label()
+        backup_form.addRow("", self._backup_status)
+
+        backup_now_btn = QPushButton("Backup Now")
+        backup_now_btn.clicked.connect(self._backup_now)
+        backup_form.addRow("", backup_now_btn)
+
+        root.addWidget(backup_box)
+
         # ── Claude MCP ────────────────────────────────────────────────────────
         mcp_box, mcp_form = _make_group("Claude Desktop MCP")
 
@@ -223,6 +283,14 @@ class SettingsDialog(QDialog):
             self._sync_interval.setValue(5)
 
         self._startup_cb.setChecked(is_windows_startup_enabled())
+
+        self._backup_dir.setText(get_env("BACKUP_DIR", ""))
+        try:
+            self._backup_retention.setValue(int(get_env("BACKUP_RETENTION_DAYS", "7")))
+        except ValueError:
+            self._backup_retention.setValue(7)
+        self._backup_hour.setValue(get_backup_hour())
+
         self._mcp_name.setText(get_env("CLAUDE_MCP_NAME", "Notion Local DB"))
 
     # ── Tests ─────────────────────────────────────────────────────────────────
@@ -248,6 +316,25 @@ class SettingsDialog(QDialog):
             dbname   = self._pg_dbname.text().strip() or "notion_mirror",
         )
         w.done.connect(lambda ok, msg: _set_status(self._pg_status, ok, msg))
+        w.done.connect(lambda: self._workers.remove(w) if w in self._workers else None)
+        self._workers.append(w)
+        w.start()
+
+    def _browse_backup_dir(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Choose Backup Folder",
+            self._backup_dir.text() or "",
+        )
+        if path:
+            self._backup_dir.setText(path)
+
+    def _backup_now(self):
+        # Save current dir before running so BackupManager picks it up
+        save_env_var("BACKUP_DIR", self._backup_dir.text().strip())
+        save_env_var("BACKUP_RETENTION_DAYS", str(self._backup_retention.value()))
+        self._backup_status.setText("Running backup…")
+        w = _BackupWorker()
+        w.done.connect(lambda ok, msg: _set_status(self._backup_status, ok, msg))
         w.done.connect(lambda: self._workers.remove(w) if w in self._workers else None)
         self._workers.append(w)
         w.start()
@@ -288,6 +375,10 @@ class SettingsDialog(QDialog):
             startup_enabled = self._startup_cb.isChecked()
             save_env_var("WINDOWS_STARTUP_ENABLED", "1" if startup_enabled else "0")
             sync_windows_startup(enabled=startup_enabled)
+
+            save_env_var("BACKUP_DIR",             self._backup_dir.text().strip())
+            save_env_var("BACKUP_RETENTION_DAYS", str(self._backup_retention.value()))
+            save_env_var("BACKUP_HOUR",            str(self._backup_hour.value()))
 
             mcp_name = self._mcp_name.text().strip() or "Notion Local DB"
             save_env_var("CLAUDE_MCP_NAME", mcp_name)

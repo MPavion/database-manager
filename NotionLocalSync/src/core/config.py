@@ -57,6 +57,11 @@ DEFAULT_ENV = {
     "CLAUDE_MCP_LAST_NAME":   "",
     "WINDOWS_STARTUP_ENABLED": "1",
     "INSTANCE_LOCK_STALE_MINUTES": "10",
+    # Backup
+    "BACKUP_DIR":             "",
+    "BACKUP_RETENTION_DAYS": "7",
+    "BACKUP_HOUR":            "2",   # 2 AM local time
+    "PG_DUMP_PATH":           "",
 }
 
 # Ensure runtime directories exist
@@ -155,6 +160,13 @@ def get_claude_mcp_name() -> str:
 
 def is_windows_startup_enabled() -> bool:
     return str(get_env("WINDOWS_STARTUP_ENABLED", "1")).strip().lower() not in {"0", "false", "off", "no"}
+
+
+def get_backup_hour() -> int:
+    try:
+        return max(0, min(23, int(get_env("BACKUP_HOUR", "2"))))
+    except ValueError:
+        return 2
 
 
 def get_tray_icon_path() -> Path | None:

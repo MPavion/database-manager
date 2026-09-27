@@ -23,7 +23,7 @@ from PySide6.QtCore import QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from src.core.config import get_app_display_name, get_env, logger
+from src.core.config import get_app_display_name, get_backup_hour, get_env, logger
 from src.db.database import DatabaseManager
 
 
@@ -73,6 +73,20 @@ def _brand_icon_with_dot(brand_path: str, colour: str) -> QIcon:
     return QIcon(pm)
 
 
+# ── Background backup worker ─────────────────────────────────────────────────
+class _BackupWorker(QThread):
+    done = Signal(bool, str)
+
+    def run(self):
+        try:
+            from src.db.backup import BackupManager
+            ok, msg = BackupManager().run_backup()
+            self.done.emit(ok, msg)
+        except Exception as exc:
+            logger.exception(f"Backup worker error: {exc}")
+            self.done.emit(False, str(exc))
+
+
 # ── Background sync worker ────────────────────────────────────────────────────
 class _SyncWorker(QThread):
     done = Signal(bool, str)   # (success, summary_message)
@@ -107,9 +121,10 @@ class TrayApp(QSystemTrayIcon):
 
     def __init__(self, db: DatabaseManager, parent=None):
         super().__init__(parent)
-        self.db           = db
-        self._state       = self.IDLE
-        self._sync_worker: _SyncWorker | None = None
+        self.db             = db
+        self._state         = self.IDLE
+        self._sync_worker:   _SyncWorker   | None = None
+        self._backup_worker: _BackupWorker | None = None
 
         self._app_name = get_app_display_name()
         self.setToolTip(self._app_name)
@@ -117,6 +132,7 @@ class TrayApp(QSystemTrayIcon):
 
         self._build_menu()
         self._start_timer()
+        self._start_backup_timer()
 
     # ── Icon ──────────────────────────────────────────────────────────────────
     def _apply_icon(self, colour: str):
@@ -169,6 +185,46 @@ class TrayApp(QSystemTrayIcon):
 
     def _on_timer(self):
         self._run_sync()
+
+    # ── Backup timer ──────────────────────────────────────────────────────────
+    def _start_backup_timer(self):
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setInterval(60 * 60 * 1000)  # check every hour
+        self._backup_timer.timeout.connect(self._check_backup)
+        self._backup_timer.start()
+
+    def _check_backup(self):
+        from src.db.backup import BackupManager
+        bm = BackupManager()
+        if not bm.is_configured():
+            return
+        if datetime.now().hour < get_backup_hour():
+            return
+        if bm.today_backup_exists():
+            return
+        self._run_backup()
+
+    def _run_backup(self):
+        if self._backup_worker and self._backup_worker.isRunning():
+            return
+        logger.info("Starting scheduled backup…")
+        worker = _BackupWorker()
+        worker.done.connect(self._on_backup_done)
+        worker.finished.connect(lambda: setattr(self, "_backup_worker", None))
+        self._backup_worker = worker
+        worker.start()
+
+    def _on_backup_done(self, success: bool, message: str):
+        if success:
+            logger.info(f"Backup complete: {message}")
+        else:
+            logger.warning(f"Backup failed: {message}")
+            self.showMessage(
+                "Notion Sync — Backup Failed",
+                message,
+                QSystemTrayIcon.Warning,
+                8000,
+            )
 
     # ── DB ready callback ─────────────────────────────────────────────────────
     def on_db_ready(self, connected: bool, error: str = ""):
@@ -230,10 +286,13 @@ class TrayApp(QSystemTrayIcon):
         if dlg.exec():
             self._timer.stop()
             self._start_timer()
+            self._check_backup()   # re-check immediately in case backup dir just set
 
     # ── Quit ──────────────────────────────────────────────────────────────────
     def _quit(self):
         if self._sync_worker and self._sync_worker.isRunning():
             self._sync_worker.quit()
             self._sync_worker.wait(3000)
+        if self._backup_worker and self._backup_worker.isRunning():
+            self._backup_worker.wait(10000)
         QApplication.quit()
