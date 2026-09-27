@@ -123,6 +123,7 @@ def build_index_entry(notion_id: str, title: str,
 
     return {
         "notion_id":       notion_id,
+        "title":           title,
         "keywords":        keywords,
         "summary":         summary,
         "page_type":       page_type,

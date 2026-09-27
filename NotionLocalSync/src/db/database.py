@@ -286,14 +286,15 @@ class DatabaseManager:
         )
         return [dict(r) for r in (rows or [])]
 
-    def upsert_index_entry(self, notion_id: str, keywords: list, summary: str,
+    def upsert_index_entry(self, notion_id: str, title: str, keywords: list, summary: str,
                             page_type: str, content_preview: str, token_estimate: int):
         self._execute(
             """
             INSERT INTO page_index
-                (notion_id, keywords, summary, page_type, content_preview, token_estimate, indexed_at)
-            VALUES (%s, %s, %s, %s, %s, %s, now())
+                (notion_id, title, keywords, summary, page_type, content_preview, token_estimate, indexed_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (notion_id) DO UPDATE SET
+                title           = EXCLUDED.title,
                 keywords        = EXCLUDED.keywords,
                 summary         = EXCLUDED.summary,
                 page_type       = EXCLUDED.page_type,
@@ -301,7 +302,7 @@ class DatabaseManager:
                 token_estimate  = EXCLUDED.token_estimate,
                 indexed_at      = now()
             """,
-            (notion_id, keywords, summary, page_type, content_preview, token_estimate),
+            (notion_id, title, keywords, summary, page_type, content_preview, token_estimate),
         )
         self.conn.commit()
 

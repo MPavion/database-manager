@@ -54,6 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_workspace_mirror_fts
 -- full.
 CREATE TABLE IF NOT EXISTS page_index (
     notion_id       TEXT PRIMARY KEY,
+    title           TEXT    DEFAULT '',
     keywords        TEXT[]  DEFAULT '{}',
     summary         TEXT    DEFAULT '',
     content_preview TEXT    DEFAULT '',
@@ -62,8 +63,19 @@ CREATE TABLE IF NOT EXISTS page_index (
     indexed_at      TIMESTAMPTZ DEFAULT now()
 );
 
+-- Idempotent migration for title column added after initial create
+ALTER TABLE page_index ADD COLUMN IF NOT EXISTS title TEXT DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_page_index_keywords
     ON page_index USING GIN(keywords);
+
+-- GIN full-text index over page_index (title + summary + content_preview)
+-- Used by the optimised search_workspace function below
+CREATE INDEX IF NOT EXISTS idx_page_index_fts
+    ON page_index
+    USING GIN (to_tsvector('english',
+        COALESCE(title, '') || ' ' || COALESCE(summary, '') || ' ' || COALESCE(content_preview, '')
+    ));
 
 -- ─── Clean up views/functions from previous schema versions (run FIRST) ───────
 DROP VIEW     IF EXISTS workspace_catalog         CASCADE;
@@ -102,6 +114,11 @@ CREATE TRIGGER trg_workspace_mirror_before_update
     FOR EACH ROW EXECUTE FUNCTION workspace_mirror_before_update();
 
 -- ─── Search function used by MCP server ──────────────────────────────────────
+-- Optimised: uses UNION CTE so each branch can use its own GIN index independently.
+-- Branch 1: FTS via idx_page_index_fts (sub-millisecond)
+-- Branch 2: keyword exact match via idx_page_index_keywords (sub-millisecond)
+-- Branch 3: title LIKE (short column only, small seq scan)
+-- Scoring runs only over matched candidates, not the full table.
 DROP FUNCTION IF EXISTS search_workspace(TEXT, INT);
 CREATE OR REPLACE FUNCTION search_workspace(p_query TEXT, p_limit INT DEFAULT 10)
 RETURNS TABLE (
@@ -117,40 +134,68 @@ RETURNS TABLE (
     match_rank      REAL
 ) LANGUAGE plpgsql STABLE AS $$
 DECLARE
-    v_query TEXT := BTRIM(COALESCE(p_query, ''));
+    v_query TEXT    := BTRIM(LOWER(COALESCE(p_query, '')));
+    v_tsq   tsquery;
 BEGIN
+    BEGIN
+        v_tsq := plainto_tsquery('english', v_query);
+    EXCEPTION WHEN OTHERS THEN
+        v_tsq := NULL;
+    END;
+
+    IF v_query = '' THEN RETURN; END IF;
+
     RETURN QUERY
+    WITH candidates AS (
+        -- Branch 1: FTS (uses idx_page_index_fts GIN)
+        SELECT fts.notion_id FROM page_index fts
+        WHERE v_tsq IS NOT NULL
+          AND to_tsvector('english',
+                  COALESCE(fts.title,'') || ' ' ||
+                  COALESCE(fts.summary,'') || ' ' ||
+                  COALESCE(fts.content_preview,'')
+              ) @@ v_tsq
+
+        UNION
+
+        -- Branch 2: keyword exact match (uses idx_page_index_keywords GIN)
+        SELECT kw.notion_id FROM page_index kw
+        WHERE kw.keywords @> ARRAY[v_query]::TEXT[]
+
+        UNION
+
+        -- Branch 3: title substring (short column, fast seq scan)
+        SELECT tl.notion_id FROM page_index tl
+        WHERE LOWER(COALESCE(tl.title,'')) LIKE '%'||v_query||'%'
+    )
     SELECT
         wm.notion_id,
-        COALESCE(NULLIF(BTRIM(wm.title), ''), 'Untitled'),
-        LEFT(COALESCE(pi.summary, wm.ai_summary, ''), 300),
+        COALESCE(NULLIF(BTRIM(pi.title),''), NULLIF(BTRIM(wm.title),''), 'Untitled'),
+        LEFT(COALESCE(pi.summary,''), 300),
         COALESCE(pi.keywords, '{}'::TEXT[]),
         COALESCE(pi.page_type, 'page'),
         COALESCE(pi.token_estimate, 0),
-        (COALESCE(jsonb_array_length(jsonb_safe_array(wm.media_local_paths)), 0) > 0),
+        (COALESCE(jsonb_array_length(
+            CASE WHEN jsonb_typeof(wm.media_local_paths) = 'array'
+                 THEN wm.media_local_paths ELSE '[]'::jsonb END
+        ), 0) > 0),
         COALESCE(wm.raw_json ->> 'url', ''),
         wm.updated_at,
         (
-            CASE WHEN LOWER(COALESCE(wm.title,'')) = LOWER(v_query)                        THEN 8.0 ELSE 0 END
-          + CASE WHEN LOWER(COALESCE(wm.title,'')) LIKE '%'||LOWER(v_query)||'%'           THEN 3.0 ELSE 0 END
-          + CASE WHEN LOWER(COALESCE(wm.ai_summary,'')) LIKE '%'||LOWER(v_query)||'%'      THEN 1.5 ELSE 0 END
-          + CASE WHEN v_query = ANY(COALESCE(pi.keywords, '{}'::TEXT[]))                   THEN 2.0 ELSE 0 END
-          + COALESCE(ts_rank(
-                to_tsvector('english', COALESCE(wm.title,'') || ' ' || COALESCE(wm.ai_summary,'')),
-                plainto_tsquery('english', v_query)
-            ), 0)
+            CASE WHEN LOWER(COALESCE(pi.title, wm.title,'')) = v_query              THEN 8.0 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(pi.title, wm.title,'')) LIKE '%'||v_query||'%' THEN 3.0 ELSE 0 END
+          + CASE WHEN LOWER(COALESCE(pi.summary,'')) LIKE '%'||v_query||'%'         THEN 1.5 ELSE 0 END
+          + CASE WHEN pi.keywords @> ARRAY[v_query]::TEXT[]                         THEN 2.0 ELSE 0 END
+          + CASE WHEN v_tsq IS NOT NULL
+                  AND to_tsvector('english',
+                          COALESCE(pi.title,'') || ' ' ||
+                          COALESCE(pi.summary,'') || ' ' ||
+                          COALESCE(pi.content_preview,'')
+                      ) @@ v_tsq                                                    THEN 1.0 ELSE 0 END
         )::REAL AS match_rank
-    FROM workspace_mirror wm
-    LEFT JOIN page_index pi ON pi.notion_id = wm.notion_id
-    WHERE wm.is_active = TRUE
-      AND v_query <> ''
-      AND (
-             LOWER(COALESCE(wm.title,''))      LIKE '%'||LOWER(v_query)||'%'
-          OR LOWER(COALESCE(wm.ai_summary,'')) LIKE '%'||LOWER(v_query)||'%'
-          OR v_query = ANY(COALESCE(pi.keywords, '{}'::TEXT[]))
-          OR to_tsvector('english', COALESCE(wm.title,'') || ' ' || COALESCE(wm.ai_summary,''))
-             @@ plainto_tsquery('english', v_query)
-      )
+    FROM candidates c
+    JOIN page_index pi ON pi.notion_id = c.notion_id
+    JOIN workspace_mirror wm ON wm.notion_id = c.notion_id AND wm.is_active = TRUE
     ORDER BY match_rank DESC, wm.updated_at DESC NULLS LAST
     LIMIT GREATEST(COALESCE(p_limit, 10), 1);
 END;
