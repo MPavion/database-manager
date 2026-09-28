@@ -31,7 +31,34 @@ from src.core.http import build_retry_session
 from src.db.database import DatabaseManager
 
 load_config()
-mcp = FastMCP(get_env("CLAUDE_MCP_NAME", "Notion Local DB"))
+
+_MCP_INSTRUCTIONS = """
+You are connected to a local mirror of the user's Notion workspace.
+
+READING — always use these tools instead of calling Notion directly:
+  1. get_stats()          confirm the mirror is live and how fresh it is
+  2. get_index()          load the full workspace map in one call (do this once per session)
+  3. search("topic")      find specific pages by keyword or full-text
+  4. get_page(notion_id)  fetch full content for a page you've already identified
+
+Start cheap and drill down: get_index() gives you a complete map without reading every page.
+Only call get_page() for pages you actually need to read in full.
+
+WRITING — never write through this MCP server. For any Notion edits (new pages, property
+updates, status changes), use Claude Desktop's native Notion integration. This preserves
+page layout, block structure, and links. The local mirror picks up the changes on the
+next sync cycle (every few minutes).
+
+The local DB is significantly faster and cheaper than the Notion API:
+  - Search latency:  ~30ms vs 500ms–2s
+  - Token cost:      ~200 tokens vs 2,000–8,000 for discovery queries
+  - Works offline:   yes, with automatic fallback to the live Notion API if needed
+""".strip()
+
+mcp = FastMCP(
+    get_env("CLAUDE_MCP_NAME", "Notion Local DB"),
+    instructions=_MCP_INSTRUCTIONS,
+)
 
 # Module-level singleton reused across tool calls
 _db: DatabaseManager | None = None
