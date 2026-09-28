@@ -2,7 +2,20 @@
 
 Turn your Notion workspace into a fast, searchable knowledge base that Claude can reason over — without hitting Notion's API on every question.
 
-The app runs quietly in your Windows system tray, keeps a local PostgreSQL mirror of your Notion workspace, and connects it to Claude Desktop via MCP. Claude can search, summarise, and cross-reference everything in your workspace in seconds.
+The app runs quietly in your Windows system tray, keeps a local mirror of your Notion workspace, and connects it to Claude Desktop via MCP. Claude can search, summarise, and cross-reference everything in your workspace in seconds.
+
+---
+
+## Why this exists
+
+Querying Notion through Claude is slow and expensive. Every question requires multiple live API calls. This app solves that:
+
+| | Direct Notion API | Notion Local Sync |
+|---|---|---|
+| Search latency | 500 ms – 2 s | ~30 ms |
+| Token cost per query | 2,000 – 8,000 tokens | ~200 tokens |
+| Works offline | No | Yes (with API fallback) |
+| Setup required | None | ~5 minutes |
 
 ---
 
@@ -22,38 +35,39 @@ The app runs quietly in your Windows system tray, keeps a local PostgreSQL mirro
 ```
 Your Notion workspace
         ↓  (sync every N minutes)
-  Local PostgreSQL DB       ←→  Claude Desktop (MCP)
+  Local Database (SQLite or PostgreSQL)   ←→   Claude Desktop (MCP)
         ↓
   Fast keyword + full-text search index
 ```
 
 1. The tray app pulls your Notion pages into a local database every few minutes
-2. Claude Desktop connects to the local DB via MCP — no Notion API calls needed for most queries
+2. Claude Desktop connects to the local database via MCP — no Notion API calls needed for most queries
 3. Ask Claude anything about your workspace; it searches the local index in milliseconds
 
 ---
 
 ## Prerequisites
 
-Before you start, make sure you have:
-
 | Requirement | Notes |
 |-------------|-------|
 | Windows 10 or 11 | The tray app is Windows-only |
-| Python 3.10 or later | [python.org](https://www.python.org/downloads/) |
-| PostgreSQL 14 or later | [postgresql.org](https://www.postgresql.org/download/windows/) — note your username and password during install |
+| Python 3.11 or later | [python.org](https://www.python.org/downloads/) — tick "Add Python to PATH" during install |
 | A free Notion account | [notion.so](https://www.notion.so) |
 | Claude Desktop | [claude.ai/download](https://claude.ai/download) |
 
+**That's it.** SQLite is built into Python — no database installation required.
+
+> PostgreSQL is also supported for advanced users who already have it running. The setup wizard will ask which you prefer.
+
 ---
 
-## Quick Start
+## Quick Start (5 minutes)
 
 ### 1 — Get the code
 
 ```powershell
 git clone https://github.com/MPavion/Database-Manager.git
-cd "Database Manager"
+cd "Database Manager\NotionLocalSync"
 ```
 
 Or download the ZIP from GitHub and extract it.
@@ -61,67 +75,74 @@ Or download the ZIP from GitHub and extract it.
 ### 2 — Run the setup script
 
 ```powershell
-cd NotionLocalSync
 setup_and_run.bat
 ```
 
-This creates a virtual environment, installs all dependencies, and launches the app. The tray icon appears in the system tray (bottom-right of your taskbar).
+This creates a Python virtual environment, installs all dependencies, and launches an **interactive setup wizard** that walks you through every step.
 
-### 3 — Connect your Notion account
+### 3 — Follow the setup wizard
 
-**Create a Notion integration:**
+The wizard takes about 5 minutes and guides you through:
 
-1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) and click **New integration**
-2. Give it a name (e.g. "Local Sync"), select your workspace, click **Submit**
-3. Copy the **Internal Integration Token** (starts with `secret_`)
+1. **Notion integration token** — create a free integration at [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. **Which databases to sync** — all of them, or specific ones by ID
+3. **Database storage** — SQLite (recommended, zero installation) or PostgreSQL
+4. **AI self-healing** — optional Anthropic API key for automatic error diagnosis
+5. **Nightly backup** — optional backup folder (Google Drive works perfectly)
+6. **Claude Desktop** — auto-configures the MCP connection
 
-**Share your databases with the integration:**
+### 4 — Restart Claude Desktop
 
-For each Notion database you want to sync:
-1. Open the database in Notion
-2. Click the `…` menu → **Connections** → search for your integration name → **Confirm**
+After the wizard completes, fully quit Claude Desktop (right-click tray icon → Quit) and reopen it. The MCP tools will be available immediately.
 
-### 4 — Configure the app
+### 5 — Ask Claude about your workspace
 
-Right-click the tray icon → **Settings**, then fill in:
-
-- **Notion Integration Token** — paste your `secret_…` token
-- **Database IDs** — enter `ALL` to sync every shared database, or paste specific IDs
-- **PostgreSQL** — enter the host, port, username, and password from your PostgreSQL install
-- **Sync interval** — how often to pull from Notion (default: 5 minutes)
-
-Click **Test** buttons to verify each connection, then **OK** to save.
-
-### 5 — Connect Claude Desktop
-
-In Settings → **Claude Desktop MCP**, click **Auto-configure Claude Desktop**.
-
-Then fully quit and reopen Claude Desktop. You should see `Notion Local DB` in the MCP tools list.
+```
+"What's in my Notion workspace?"
+"Find everything I've noted about machine learning"
+"What were the action items from last week's meeting?"
+"Summarise my notes on React hooks"
+```
 
 ---
 
-## What you'll see in Claude Desktop
+## Connecting Notion databases to the integration
 
-Once connected, you can ask Claude things like:
+Before pages sync, each Notion database must be connected to your integration:
 
-- *"What courses do I have notes on?"*
-- *"Summarise my notes on React hooks"*
-- *"What were the action items from last week's project review?"*
-- *"Find everything related to machine learning in my workspace"*
-- *"What's the status of the Alpha project?"*
+1. Open the database in Notion
+2. Click `…` (top-right) → **Connections** → search for your integration → **Confirm**
 
-Claude uses a fast local index — most queries take under 100 ms and cost no Notion API credits.
+To give access to your entire workspace at once, open your top-level workspace page, click **Share**, and connect the integration there.
 
 ---
 
 ## Features
 
+- **Zero-install database** — SQLite by default; no PostgreSQL or any other server needed
 - **Encrypted secrets** — API keys and passwords stored with Fernet encryption; never plain-text on disk
-- **Nightly backup** — automatic `pg_dump` to any folder (including Google Drive) with configurable retention
+- **Nightly backup** — automatic backup to any folder (including Google Drive) with configurable retention
 - **Self-healing** — if a sync error looks like a code bug, Claude Opus 4.7 diagnoses and patches the source automatically
 - **Desktop launcher** — double-click `Database Manager Launcher.exe` to start without opening a terminal
 - **Windows auto-start** — optional registry entry to launch on login
 - **Media proxy** — attachments and images downloaded locally and served on `localhost:8080`
+- **Automatic Notion API fallback** — if the local DB is unreachable, Claude falls back to live Notion queries transparently
+
+---
+
+## What Claude can do with your workspace
+
+Once connected, Claude has access to five tools:
+
+| Tool | What it does |
+|------|-------------|
+| `get_stats()` | Checks how fresh the mirror is and confirms the DB is live |
+| `get_index()` | Loads a complete map of your workspace — every page title, keywords, and summary in one call |
+| `search(query)` | Ranked full-text + keyword search across all pages |
+| `get_page(id)` | Full content of a specific page including AI summary, all properties, and media |
+| `list_recent()` | Pages sorted by most recently updated |
+
+All tools fall back to the live Notion API automatically if the local DB is unavailable.
 
 ---
 
@@ -129,7 +150,7 @@ Claude uses a fast local index — most queries take under 100 ms and cost no No
 
 See **[WEAVE.md](WEAVE.md)** — a step-by-step guide for beginners on how to:
 
-- Set up a Notion knowledge base database from scratch
+- Set up a Notion knowledge base from scratch
 - Structure it for courses, books, references, or projects
 - Import resources from your PC
 - Use Claude to query, summarise, and connect ideas across everything you've collected
@@ -138,15 +159,20 @@ See **[WEAVE.md](WEAVE.md)** — a step-by-step guide for beginners on how to:
 
 ## Detailed documentation
 
-- [NotionLocalSync/README.md](NotionLocalSync/README.md) — full technical reference
-- [NotionLocalSync/CLAUDE.md](NotionLocalSync/CLAUDE.md) — Claude MCP integration details
-- [NotionLocalSync/AI instructions.md](NotionLocalSync/AI%20instructions.md) — quick reference for Claude
+- [NotionLocalSync/README.md](NotionLocalSync/README.md) — full technical reference, configuration options, project layout
+- [NotionLocalSync/CLAUDE.md](NotionLocalSync/CLAUDE.md) — MCP integration details and query patterns
 
 ---
 
 ## Contributing
 
 Issues and pull requests are welcome. See [NotionLocalSync/README.md](NotionLocalSync/README.md) for the project layout and architecture notes.
+
+---
+
+## Licence
+
+[MIT](LICENSE) — free to use, modify, and distribute.
 
 ---
 
