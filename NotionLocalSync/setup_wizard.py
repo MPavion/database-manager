@@ -86,8 +86,11 @@ def welcome():
     print()
     print("  You will need:")
     print("    • A Notion account (any plan)")
-    print("    • PostgreSQL installed and running")
     print("    • Claude Desktop installed")
+    print()
+    print("  Database (choose one):")
+    print("    • SQLite — built-in, zero installation (recommended)")
+    print("    • PostgreSQL — for advanced users who already have it running")
     print()
     _hr("═")
     input("\n  Press Enter to begin, or Ctrl+C to cancel...\n")
@@ -107,32 +110,6 @@ def check_prerequisites():
         _info("Download from: https://www.python.org/downloads/")
         _info("Make sure to check 'Add Python to PATH' during install.")
         sys.exit(1)
-
-    # PostgreSQL
-    pg_found = False
-    try:
-        import psycopg2
-        conn = psycopg2.connect(
-            host="localhost", port=5432, user="postgres",
-            dbname="postgres", connect_timeout=3,
-        )
-        conn.close()
-        pg_found = True
-        _ok("PostgreSQL is running on localhost:5432")
-    except Exception:
-        pass
-
-    if not pg_found:
-        _warn("Could not reach PostgreSQL on localhost:5432.")
-        print()
-        _info("If PostgreSQL is not installed:")
-        _info("  1. Download: https://www.postgresql.org/download/windows/")
-        _info("  2. Run the installer — accept all defaults")
-        _info("  3. Set a password for the 'postgres' user — write it down!")
-        _info("  4. When install finishes, re-run this wizard.")
-        print()
-        if not _ask_yn("Continue anyway (you can fix this in Settings later)?", default="n"):
-            sys.exit(0)
 
     # Claude Desktop
     appdata = Path(os.environ.get("APPDATA", ""))
@@ -241,11 +218,48 @@ def choose_databases(token: str) -> str:
         return "ALL"
 
 
-# ── Step 4: PostgreSQL ─────────────────────────────────────────────────────────
+# ── Step 4: Database backend ───────────────────────────────────────────────────
 
-def setup_postgres() -> tuple[str, str, str, str, str]:
+def setup_database() -> dict:
+    """
+    Returns a dict with DB config keys ready to pass to write_config().
+    Keys: db_backend, sqlite_path, pg_host, pg_port, pg_user, pg_password, pg_dbname
+    """
+    _step(4, "Database storage")
+
+    print()
+    _info("Choose how the app stores your Notion mirror locally:")
+    print()
+    _info("  1  SQLite  (recommended — no installation needed)")
+    _info("     A single file on your computer. Works out of the box.")
+    print()
+    _info("  2  PostgreSQL  (for advanced users)")
+    _info("     Requires a running PostgreSQL server.")
+    print()
+
+    choice = ""
+    while choice not in ("1", "2"):
+        choice = input("  → Your choice [1 or 2, default 1]: ").strip() or "1"
+
+    if choice == "1":
+        # SQLite path
+        default_path = str(HERE / "data" / "notion_mirror.db")
+        sqlite_path = _ask(
+            "SQLite file path (press Enter for default)",
+            default=default_path,
+        )
+        if sqlite_path == default_path:
+            sqlite_path = ""  # store empty = use default
+        _ok("SQLite selected — no extra installation needed.")
+        return {
+            "db_backend":  "sqlite",
+            "sqlite_path": sqlite_path,
+            "pg_host": "", "pg_port": "", "pg_user": "",
+            "pg_password": "", "pg_dbname": "",
+        }
+
+    # PostgreSQL
     _step(4, "PostgreSQL connection")
-
     _info("The app stores your Notion mirror in a local PostgreSQL database.")
     _info("The database will be created automatically if it doesn't exist.")
     print()
@@ -270,13 +284,21 @@ def setup_postgres() -> tuple[str, str, str, str, str]:
         _warn(f"Connection test failed: {exc}")
         _info("The app will retry when it starts. You can update credentials in Settings.")
 
-    return host, port, user, password, dbname
+    return {
+        "db_backend":  "postgresql",
+        "sqlite_path": "",
+        "pg_host":     host,
+        "pg_port":     port,
+        "pg_user":     user,
+        "pg_password": password,
+        "pg_dbname":   dbname,
+    }
 
 
 # ── Step 5: Anthropic API key (optional) ─────────────────────────────────────
 
 def setup_anthropic() -> str:
-    _step(5, "AI self-healing — optional")
+    _step(5, "AI self-healing — optional")  # noqa: keep step numbers consistent
 
     _info("If sync errors ever occur, the app can automatically diagnose")
     _info("and fix them using Claude Opus 4.7. This requires an Anthropic")
@@ -330,26 +352,34 @@ def setup_backup() -> str:
 
 # ── Step 7: Save configuration ─────────────────────────────────────────────────
 
-def write_config(token: str, db_ids: str, pg_host: str, pg_port: str,
-                 pg_user: str, pg_password: str, pg_dbname: str,
+def write_config(token: str, db_ids: str, db_cfg: dict,
                  anthropic_key: str, backup_dir: str):
     _step(7, "Saving configuration")
 
     updates = {
         "NOTION_DB_ID":              db_ids,
-        "PG_HOST":                   pg_host,
-        "PG_PORT":                   pg_port,
-        "PG_USER":                   pg_user,
-        "PG_DBNAME":                 pg_dbname,
+        "DB_BACKEND":                db_cfg.get("db_backend", "sqlite"),
         "SYNC_INTERVAL_MINUTES":     "5",
         "CLAUDE_MCP_NAME":           "Notion Local DB",
         "WINDOWS_STARTUP_ENABLED":   "1",
         "ANTHROPIC_HEALER_ENABLED":  "1" if anthropic_key else "0",
     }
+
+    # SQLite
+    if db_cfg.get("sqlite_path"):
+        updates["SQLITE_PATH"] = db_cfg["sqlite_path"]
+
+    # PostgreSQL (only write if user chose PG)
+    if db_cfg.get("db_backend") == "postgresql":
+        updates["PG_HOST"]   = db_cfg.get("pg_host", "localhost")
+        updates["PG_PORT"]   = db_cfg.get("pg_port", "5432")
+        updates["PG_USER"]   = db_cfg.get("pg_user", "postgres")
+        updates["PG_DBNAME"] = db_cfg.get("pg_dbname", "notion_mirror")
+        if db_cfg.get("pg_password"):
+            updates["PG_PASSWORD"] = db_cfg["pg_password"]
+
     if token:
         updates["NOTION_TOKEN"] = token
-    if pg_password:
-        updates["PG_PASSWORD"] = pg_password
     if anthropic_key:
         updates["ANTHROPIC_API_KEY"] = anthropic_key
     if backup_dir:
@@ -426,17 +456,13 @@ def main():
     welcome()
     check_prerequisites()
 
-    token       = setup_notion()
-    db_ids      = choose_databases(token)
-    pg_host, pg_port, pg_user, pg_password, pg_dbname = setup_postgres()
-    ant_key     = setup_anthropic()
-    backup_dir  = setup_backup()
+    token      = setup_notion()
+    db_ids     = choose_databases(token)
+    db_cfg     = setup_database()
+    ant_key    = setup_anthropic()
+    backup_dir = setup_backup()
 
-    write_config(
-        token, db_ids,
-        pg_host, pg_port, pg_user, pg_password, pg_dbname,
-        ant_key, backup_dir,
-    )
+    write_config(token, db_ids, db_cfg, ant_key, backup_dir)
     configure_mcp()
     summary()
 

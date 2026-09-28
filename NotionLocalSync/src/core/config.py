@@ -66,6 +66,9 @@ DEFAULT_ENV = {
     "ANTHROPIC_API_KEY":           "",
     "ANTHROPIC_API_KEY_ENCRYPTED": "",
     "ANTHROPIC_HEALER_ENABLED":    "1",
+    # Database backend
+    "DB_BACKEND":  "sqlite",
+    "SQLITE_PATH": "",   # empty = auto: data/notion_mirror.db
 }
 
 # Ensure runtime directories exist

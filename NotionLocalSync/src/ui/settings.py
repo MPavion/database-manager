@@ -15,6 +15,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -136,6 +137,35 @@ class SettingsDialog(QDialog):
         root = QVBoxLayout(self)
         root.setSpacing(12)
 
+        # ── Database ──────────────────────────────────────────────────────────
+        db_box, db_form = _make_group("Database")
+
+        self._db_backend = QComboBox()
+        self._db_backend.addItem(
+            "SQLite — built-in, no installation needed (recommended)", "sqlite"
+        )
+        self._db_backend.addItem(
+            "PostgreSQL — for advanced users", "postgresql"
+        )
+        db_form.addRow("Database type:", self._db_backend)
+
+        sqlite_path_row = QWidget()
+        sqlite_path_layout = QHBoxLayout(sqlite_path_row)
+        sqlite_path_layout.setContentsMargins(0, 0, 0, 0)
+        self._sqlite_path = QLineEdit()
+        self._sqlite_path.setPlaceholderText("Leave blank for default: data/notion_mirror.db")
+        sqlite_path_browse = QPushButton("Browse…")
+        sqlite_path_browse.setFixedWidth(72)
+        sqlite_path_browse.clicked.connect(self._browse_sqlite_path)
+        sqlite_path_layout.addWidget(self._sqlite_path)
+        sqlite_path_layout.addWidget(sqlite_path_browse)
+        self._sqlite_path_label = QLabel("SQLite file path:")
+        db_form.addRow(self._sqlite_path_label, sqlite_path_row)
+
+        self._db_backend.currentIndexChanged.connect(self._on_backend_changed)
+
+        root.addWidget(db_box)
+
         # ── Notion ────────────────────────────────────────────────────────────
         notion_box, notion_form = _make_group("Notion")
 
@@ -159,6 +189,7 @@ class SettingsDialog(QDialog):
 
         # ── PostgreSQL ────────────────────────────────────────────────────────
         pg_box, pg_form = _make_group("PostgreSQL")
+        self._pg_box = pg_box
 
         self._pg_host   = QLineEdit(); pg_form.addRow("Host:", self._pg_host)
         self._pg_port   = QLineEdit(); pg_form.addRow("Port:", self._pg_port)
@@ -288,6 +319,13 @@ class SettingsDialog(QDialog):
 
     # ── Load current values ───────────────────────────────────────────────────
     def _load_values(self):
+        # Database backend
+        backend = get_env("DB_BACKEND", "sqlite").strip().lower()
+        idx = 0 if backend == "sqlite" else 1
+        self._db_backend.setCurrentIndex(idx)
+        self._sqlite_path.setText(get_env("SQLITE_PATH", ""))
+        self._on_backend_changed(idx)
+
         self._notion_token.setText(
             get_secret("NOTION_TOKEN", encrypted_key="NOTION_TOKEN_ENCRYPTED")
         )
@@ -348,6 +386,21 @@ class SettingsDialog(QDialog):
         self._workers.append(w)
         w.start()
 
+    def _on_backend_changed(self, index: int):
+        is_sqlite = (index == 0)
+        self._sqlite_path_label.setVisible(is_sqlite)
+        self._sqlite_path.parentWidget().setVisible(is_sqlite)
+        self._pg_box.setVisible(not is_sqlite)
+
+    def _browse_sqlite_path(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Choose SQLite Database File",
+            self._sqlite_path.text() or "",
+            "SQLite Database (*.db);;All Files (*)",
+        )
+        if path:
+            self._sqlite_path.setText(path)
+
     def _browse_backup_dir(self):
         path = QFileDialog.getExistingDirectory(
             self, "Choose Backup Folder",
@@ -387,6 +440,11 @@ class SettingsDialog(QDialog):
     # ── Save ──────────────────────────────────────────────────────────────────
     def _save_and_accept(self):
         try:
+            # Database backend
+            backend = self._db_backend.currentData() or "sqlite"
+            save_env_var("DB_BACKEND", backend)
+            save_env_var("SQLITE_PATH", self._sqlite_path.text().strip())
+
             save_secret("NOTION_TOKEN", self._notion_token.text().strip(),
                          encrypted_key="NOTION_TOKEN_ENCRYPTED")
             save_env_var("NOTION_DB_ID",

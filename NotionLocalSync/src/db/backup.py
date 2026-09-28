@@ -1,25 +1,23 @@
 """
-Nightly pg_dump backup manager.
+Nightly backup manager.
 
-Exports the local PostgreSQL mirror to a portable .dump file (custom format)
-in a user-configured directory. Old backups are pruned to retain only the
-most recent N days.
+For SQLite: copies the database file using the sqlite3 backup API (atomic).
+For PostgreSQL: exports via pg_dump to a portable .dump file (custom format).
 
-The backup folder can be a Google Drive / OneDrive sync folder — the .dump
-files are written atomically (temp file → rename) so there is no risk of the
-cloud client picking up a partial export.
+Both write atomically (temp file → rename) so cloud-sync folders are safe.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.core.config import get_env, get_secret, logger
+from src.core.config import BASE_DIR, get_env, get_secret, logger
 
 
 # ── pg_dump discovery ─────────────────────────────────────────────────────────
@@ -50,13 +48,15 @@ def _find_pg_dump() -> str | None:
 # ── BackupManager ─────────────────────────────────────────────────────────────
 
 class BackupManager:
-    FILE_PREFIX = "notion_mirror_"
-    FILE_SUFFIX = ".dump"
+    FILE_PREFIX    = "notion_mirror_"
+    FILE_SUFFIX_PG = ".dump"
+    FILE_SUFFIX_SQ = ".db"
 
     def __init__(self):
         self._backup_dir     = Path(get_env("BACKUP_DIR", "")).expanduser() if get_env("BACKUP_DIR") else None
         self._retention_days = max(1, int(get_env("BACKUP_RETENTION_DAYS", "7") or "7"))
         self._pg_dump        = _find_pg_dump()
+        self._backend        = get_env("DB_BACKEND", "sqlite").strip().lower()
 
     def is_configured(self) -> bool:
         return bool(self._backup_dir)
@@ -64,15 +64,19 @@ class BackupManager:
     def backup_dir_exists(self) -> bool:
         return bool(self._backup_dir and self._backup_dir.is_dir())
 
+    @property
+    def _file_suffix(self) -> str:
+        return self.FILE_SUFFIX_SQ if self._backend == "sqlite" else self.FILE_SUFFIX_PG
+
     def today_backup_exists(self) -> bool:
         if not self._backup_dir:
             return False
         date_str = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-        return (self._backup_dir / f"{self.FILE_PREFIX}{date_str}{self.FILE_SUFFIX}").exists()
+        return (self._backup_dir / f"{self.FILE_PREFIX}{date_str}{self._file_suffix}").exists()
 
     def run_backup(self) -> tuple[bool, str]:
         """
-        Run pg_dump, save to backup_dir, prune old backups.
+        Run a backup, save to backup_dir, prune old backups.
         Returns (success, message).
         """
         # Reload config in case settings changed since __init__
@@ -82,22 +86,56 @@ class BackupManager:
 
         self._backup_dir     = Path(backup_dir_str).expanduser()
         self._retention_days = max(1, int(get_env("BACKUP_RETENTION_DAYS", "7") or "7"))
-        self._pg_dump        = _find_pg_dump()
-
-        if not self._pg_dump:
-            return False, (
-                "pg_dump not found. Install PostgreSQL client tools, or set "
-                "PG_DUMP_PATH in Settings."
-            )
+        self._backend        = get_env("DB_BACKEND", "sqlite").strip().lower()
 
         try:
             self._backup_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
             return False, f"Cannot create backup directory: {exc}"
 
-        date_str  = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-        dest_name = f"{self.FILE_PREFIX}{date_str}{self.FILE_SUFFIX}"
+        ts        = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+        dest_name = f"{self.FILE_PREFIX}{ts}_full{self._file_suffix}"
         dest_path = self._backup_dir / dest_name
+
+        if self._backend == "sqlite":
+            ok, msg = self._run_sqlite_backup(dest_path)
+        else:
+            ok, msg = self._run_pg_backup(dest_path)
+
+        if ok:
+            self._prune_old_backups()
+
+        return ok, msg
+
+    # ── SQLite backup ─────────────────────────────────────────────────────────
+    def _run_sqlite_backup(self, dest_path: Path) -> tuple[bool, str]:
+        db_path_str = get_env("SQLITE_PATH", "").strip()
+        db_path = Path(db_path_str) if db_path_str else BASE_DIR / "data" / "notion_mirror.db"
+        if not db_path.exists():
+            return False, "SQLite database file not found."
+        tmp = dest_path.with_suffix(".tmp")
+        try:
+            src = sqlite3.connect(str(db_path))
+            dst = sqlite3.connect(str(tmp))
+            src.backup(dst)
+            dst.close()
+            src.close()
+            tmp.replace(dest_path)
+            size_mb = dest_path.stat().st_size / (1024 * 1024)
+            logger.info(f"SQLite backup written: {dest_path} ({size_mb:.1f} MB)")
+            return True, f"Backup saved: {dest_path.name} ({size_mb:.1f} MB)"
+        except Exception as exc:
+            tmp.unlink(missing_ok=True)
+            return False, str(exc)
+
+    # ── PostgreSQL backup ─────────────────────────────────────────────────────
+    def _run_pg_backup(self, dest_path: Path) -> tuple[bool, str]:
+        self._pg_dump = _find_pg_dump()
+        if not self._pg_dump:
+            return False, (
+                "pg_dump not found. Install PostgreSQL client tools, or set "
+                "PG_DUMP_PATH in Settings."
+            )
 
         host   = get_env("PG_HOST",   "localhost")
         port   = get_env("PG_PORT",   "5432")
@@ -110,7 +148,7 @@ class BackupManager:
         # Write to a temp file first, then rename — safe for cloud-sync folders
         try:
             fd, tmp_path = tempfile.mkstemp(
-                suffix=".tmp", prefix=dest_name, dir=self._backup_dir
+                suffix=".tmp", prefix=dest_path.name, dir=self._backup_dir
             )
             os.close(fd)
         except Exception as exc:
@@ -136,7 +174,8 @@ class BackupManager:
 
             Path(tmp_path).rename(dest_path)
             size_mb = dest_path.stat().st_size / (1024 * 1024)
-            logger.info(f"Backup written: {dest_path} ({size_mb:.1f} MB)")
+            logger.info(f"PostgreSQL backup written: {dest_path} ({size_mb:.1f} MB)")
+            return True, f"Backup saved: {dest_path.name} ({size_mb:.1f} MB)"
 
         except subprocess.TimeoutExpired:
             Path(tmp_path).unlink(missing_ok=True)
@@ -145,14 +184,12 @@ class BackupManager:
             Path(tmp_path).unlink(missing_ok=True)
             return False, f"Backup error: {exc}"
 
-        self._prune_old_backups()
-        return True, f"Backup saved: {dest_name} ({size_mb:.1f} MB)"
-
     def _prune_old_backups(self):
         if not self._backup_dir or not self._backup_dir.is_dir():
             return
+        suffix = self._file_suffix
         cutoff = datetime.now(tz=timezone.utc).timestamp() - (self._retention_days * 86400)
-        for f in self._backup_dir.glob(f"{self.FILE_PREFIX}*{self.FILE_SUFFIX}"):
+        for f in self._backup_dir.glob(f"{self.FILE_PREFIX}*{suffix}"):
             try:
                 if f.stat().st_mtime < cutoff:
                     f.unlink()

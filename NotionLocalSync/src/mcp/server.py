@@ -303,19 +303,7 @@ def list_recent(limit: int = 20) -> dict:
     try:
         db = _get_db()
         if db.is_connected():
-            rows = db._execute(
-                """
-                SELECT wm.notion_id, wm.title, wm.updated_at, wm.source_updated_at,
-                       wm.needs_push, pi.page_type, pi.keywords,
-                       COALESCE(wm.raw_json ->> 'url', '') AS notion_url
-                  FROM workspace_mirror wm
-                  LEFT JOIN page_index pi ON pi.notion_id = wm.notion_id
-                 WHERE wm.is_active = TRUE
-                 ORDER BY wm.updated_at DESC NULLS LAST
-                 LIMIT %s
-                """,
-                (lim,), fetch="all",
-            )
+            rows = db.list_recent_pages(lim)
             return {
                 "source": "local_db",
                 "count":  len(rows or []),
