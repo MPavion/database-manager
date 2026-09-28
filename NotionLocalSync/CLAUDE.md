@@ -63,8 +63,10 @@ SELECT title, ai_summary FROM workspace_mirror WHERE notion_id = 'your-id' AND i
 
 - MCP server tools: `src/mcp/server.py`
 - Sync logic: `src/sync/engine.py`
+- Self-healing agent: `src/sync/healer.py`
 - DB schema: `src/db/sql/schema.sql`
 - Keyword indexer: `src/db/indexer.py`
+- Backup manager: `src/db/backup.py`
 - Tray app: `src/ui/tray.py`
 - Settings dialog: `src/ui/settings.py`
 - MCP config writer: `src/mcp/configurator.py`
