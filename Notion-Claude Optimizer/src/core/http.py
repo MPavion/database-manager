@@ -14,7 +14,7 @@ def build_retry_session(
     backoff_factor: float = 0.5,
     status_forcelist: tuple[int, ...] = DEFAULT_STATUS_FORCELIST,
     allowed_methods=frozenset(DEFAULT_ALLOWED_METHODS),
-    user_agent: str = "NotionLocalSync/2.0",
+    user_agent: str = "Notion-Claude-Optimizer/2.0",
 ) -> requests.Session:
     retry = Retry(
         total=max(0, int(total_retries or 0)),
@@ -34,7 +34,7 @@ def build_retry_session(
     session.headers.update(
         {
             "Accept": "application/json, text/plain, */*",
-            "User-Agent": str(user_agent or "NotionLocalSync/2.0"),
+            "User-Agent": str(user_agent or "Notion-Claude-Optimizer/2.0"),
         }
     )
     return session

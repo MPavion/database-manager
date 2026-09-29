@@ -24,7 +24,7 @@ from src.db.database import DatabaseManager
 class SyncEngine:
     def __init__(self, db: DatabaseManager):
         self.db             = db
-        self.http           = build_retry_session(user_agent="NotionLocalSync/3.0")
+        self.http           = build_retry_session(user_agent="Notion-Claude-Optimizer/3.0")
         self.download_cache: dict[str, str] = {}
         self.last_summary   = "Ready"
         self.last_run_stats = {

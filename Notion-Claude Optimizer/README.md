@@ -15,7 +15,7 @@ A Windows tray application that mirrors your Notion workspace into a local datab
 - **Self-healing** — persistent sync errors are diagnosed by Claude Opus 4.7, which can patch source code and verify the fix automatically
 - **Media proxy** — downloads Notion attachments and images locally and serves them on `http://localhost:8080`
 - **Encrypted secrets** — API keys and passwords stored with Fernet symmetric encryption; never plain-text on disk
-- **Desktop launcher** — double-click `Database Manager Launcher.exe` to start without a terminal
+- **Desktop launcher** — double-click `Notion-Claude Optimizer Launcher.exe` to start without a terminal
 - **Windows auto-start** — optional registry entry to launch on login
 
 ---
@@ -48,8 +48,8 @@ PostgreSQL is **not required**. SQLite is built into Python and is the default d
 ### First-time setup
 
 ```powershell
-git clone https://github.com/MPavion/Database-Manager.git
-cd "Database Manager\Notion-Claude Optimizer"
+git clone https://github.com/MPavion/Notion-Claude-Optimizer.git
+cd "Notion-Claude Optimizer"
 setup_and_run.bat
 ```
 

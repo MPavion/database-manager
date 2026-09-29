@@ -87,7 +87,7 @@ def _notion_headers() -> dict:
 
 
 def _notion_session():
-    s = build_retry_session(user_agent="NotionLocalSync-MCP/3.0")
+    s = build_retry_session(user_agent="Notion-Claude-Optimizer-MCP/3.0")
     s.headers.update(_notion_headers())
     return s
 

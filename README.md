@@ -10,7 +10,7 @@ The app runs quietly in your Windows system tray, keeps a local mirror of your N
 
 Querying Notion through Claude is slow and expensive. Every question requires multiple live API calls. This app solves that:
 
-| | Direct Notion API | Notion Local Sync |
+| | Direct Notion API | Notion-Claude Optimizer |
 |---|---|---|
 | Search latency | 500 ms – 2 s | ~30 ms |
 | Token cost per query | 2,000 – 8,000 tokens | ~200 tokens |
@@ -66,8 +66,8 @@ Your Notion workspace
 ### 1 — Get the code
 
 ```powershell
-git clone https://github.com/MPavion/Database-Manager.git
-cd "Database Manager\Notion-Claude Optimizer"
+git clone https://github.com/MPavion/Notion-Claude-Optimizer.git
+cd "Notion-Claude Optimizer"
 ```
 
 Or download the ZIP from GitHub and extract it.
@@ -123,7 +123,7 @@ To give access to your entire workspace at once, open your top-level workspace p
 - **Encrypted secrets** — API keys and passwords stored with Fernet encryption; never plain-text on disk
 - **Nightly backup** — automatic backup to any folder (including Google Drive) with configurable retention
 - **Self-healing** — if a sync error looks like a code bug, Claude Opus 4.7 diagnoses and patches the source automatically
-- **Desktop launcher** — double-click `Database Manager Launcher.exe` to start without opening a terminal
+- **Desktop launcher** — double-click `Notion-Claude Optimizer Launcher.exe` to start without opening a terminal
 - **Windows auto-start** — optional registry entry to launch on login
 - **Media proxy** — attachments and images downloaded locally and served on `localhost:8080`
 - **Automatic Notion API fallback** — if the local DB is unreachable, Claude falls back to live Notion queries transparently

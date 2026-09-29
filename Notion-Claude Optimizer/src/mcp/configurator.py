@@ -1,6 +1,6 @@
 """
-Auto-configures Claude Desktop's claude_desktop_config.json so it points to
-this app's MCP server.  Called on every app startup so the config stays current
+Auto-configures Claude Desktop's claude_desktop_config.json AND Claude Code's
+~/.claude.json so both point to this app's MCP server.  Called on every app startup so the config stays current
 even when Python or the app moves.
 
 On each run:
@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
+import time
 from pathlib import Path
 
 from src.core.config import get_claude_mcp_name, get_env, logger, save_env_var
@@ -26,15 +28,16 @@ _LEGACY_SERVER_NAMES = {
     "NotionLocalSync",
 }
 
-# Path fragments that identify our app's scripts/executables
+# Path fragments that identify our app's scripts/executables.
+# Keep these app-specific: generic names like "main.py" / "server.py" would
+# match (and delete) unrelated MCP servers.
 _OUR_SCRIPT_FRAGMENTS = (
     "Notion-Claude Optimizer",
     "NotionLocalSync",
+    "Database Manager",
     "notion_local_sync",
     "notion_claude_optimizer",
     "business_brain_mcp",
-    "server.py",
-    "main.py",
 )
 
 
@@ -112,15 +115,87 @@ def configure_claude_mcp() -> bool:
         "env":     {"PYTHONUTF8": "1"},
     }
 
+    desktop_ok = False
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
-        save_env_var("CLAUDE_MCP_LAST_NAME", server_name)
         logger.info(
             f"Claude MCP config updated: '{server_name}' → {command} {' '.join(args)}"
         )
-        return True
+        desktop_ok = True
     except Exception as exc:
         logger.error(f"Failed to write Claude Desktop config: {exc}")
+
+    # Claude Code keeps its own, separate MCP registry (~/.claude.json).
+    try:
+        configure_claude_code_mcp(server_name, last_name, command, args)
+    except Exception as exc:
+        logger.warning(f"Claude Code MCP auto-configuration failed (non-fatal): {exc}")
+
+    if desktop_ok:
+        save_env_var("CLAUDE_MCP_LAST_NAME", server_name)
+    return desktop_ok
+
+
+def configure_claude_code_mcp(server_name: str, last_name: str,
+                              command: str, args: list[str]) -> bool:
+    """
+    Write (or refresh) the user-scope MCP entry in Claude Code's ~/.claude.json
+    and remove stale entries for this app at user and project (local) scope.
+    Claude Code is not touched if it has never been run (no ~/.claude.json).
+    """
+    config_path = Path.home() / ".claude.json"
+    if not config_path.exists():
         return False
+
+    entry = {
+        "type":    "stdio",
+        "command": command,
+        "args":    args,
+        "env":     {"PYTHONUTF8": "1"},
+    }
+
+    for _attempt in range(3):
+        mtime_before = config_path.stat().st_mtime_ns
+        with open(config_path, encoding="utf-8") as f:
+            config = json.load(f)
+
+        def _prune(servers: dict) -> list[str]:
+            stale = [n for n, e in servers.items()
+                     if isinstance(e, dict) and (
+                         _looks_like_our_entry(n, e)
+                         or n == server_name
+                         or (last_name and n == last_name))]
+            for n in stale:
+                servers.pop(n, None)
+            return stale
+
+        removed = _prune(config.setdefault("mcpServers", {}))
+        for proj in (config.get("projects") or {}).values():
+            if isinstance(proj, dict) and isinstance(proj.get("mcpServers"), dict):
+                removed += _prune(proj["mcpServers"])
+
+        config["mcpServers"][server_name] = entry
+
+        # Claude Code rewrites this file often — only replace it if it hasn't
+        # changed since we read it, otherwise retry.
+        if config_path.stat().st_mtime_ns != mtime_before:
+            time.sleep(0.5)
+            continue
+
+        backup = config_path.with_name(".claude.json.notion-optimizer.bak")
+        shutil.copy2(config_path, backup)
+        tmp = config_path.with_name(".claude.json.notion-optimizer.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+        os.replace(tmp, config_path)
+
+        logger.info(
+            f"Claude Code MCP config updated: '{server_name}' → {command} {' '.join(args)}"
+            + (f" (removed stale: {', '.join(sorted(set(removed)))})" if removed else "")
+        )
+        return True
+
+    logger.warning("Claude Code config kept changing; will retry on next startup.")
+    return False

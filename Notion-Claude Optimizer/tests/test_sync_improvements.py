@@ -70,7 +70,7 @@ class SecurityAndResilienceTests(unittest.TestCase):
 
         self.assertEqual(adapter.max_retries.total, 4)
         self.assertEqual(adapter.max_retries.backoff_factor, 0.3)
-        self.assertIn("NotionLocalSync", session.headers.get("User-Agent", ""))
+        self.assertIn("Notion-Claude-Optimizer", session.headers.get("User-Agent", ""))
 
 
 class DatabaseSyncDecisionTests(unittest.TestCase):
@@ -1957,8 +1957,8 @@ class StartupConfigTests(unittest.TestCase):
 
     def test_build_windows_startup_command_uses_pythonw_and_startup_flag(self):
         command = build_windows_startup_command(
-            Path("C:/demo/NotionLocalSync"),
-            python_executable="C:/demo/NotionLocalSync/venv/Scripts/python.exe",
+            Path("C:/demo/Notion-Claude-Optimizer"),
+            python_executable="C:/demo/Notion-Claude-Optimizer/venv/Scripts/python.exe",
         )
 
         self.assertIn("pythonw.exe", command)

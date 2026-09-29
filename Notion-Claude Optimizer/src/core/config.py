@@ -76,7 +76,7 @@ MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Logger ────────────────────────────────────────────────────────────────────
-logger = logging.getLogger("NotionLocalSync")
+logger = logging.getLogger("NotionClaudeOptimizer")
 logger.setLevel(logging.DEBUG)
 
 if not logger.handlers:
