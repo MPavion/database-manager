@@ -1,6 +1,6 @@
-# Notion Local Sync — Technical Reference
+# Notion-Claude Optimizer — Technical Reference
 
-A Windows tray application that mirrors your Notion workspace into a local database (SQLite by default, PostgreSQL optional) and exposes it to Claude Desktop via MCP — significantly faster, cheaper, and offline-capable compared to querying Notion directly.
+A Windows tray application that mirrors your Notion workspace into a local database (SQLite by default, PostgreSQL optional) and exposes it to Claude Desktop via MCP — up to 98% faster and 97% cheaper per query than hitting the Notion API directly.
 
 > **New here?** Start with the [root README](../README.md) and the beginner-friendly [WEAVE guide](../WEAVE.md) first.
 
@@ -49,7 +49,7 @@ PostgreSQL is **not required**. SQLite is built into Python and is the default d
 
 ```powershell
 git clone https://github.com/MPavion/Database-Manager.git
-cd "Database Manager\NotionLocalSync"
+cd "Database Manager\Notion-Claude Optimizer"
 setup_and_run.bat
 ```
 
@@ -115,7 +115,7 @@ Load `get_index()` once at the start of a session — it gives Claude a full map
 ## Project layout
 
 ```
-NotionLocalSync/
+Notion-Claude Optimizer/
   setup_and_run.bat       # entry point: venv, deps, wizard, launch
   setup_wizard.py         # interactive first-time setup wizard
   src/
@@ -234,3 +234,19 @@ All settings can be configured through the **Settings dialog** (right-click tray
 - **Self-healing log** — `logs/healer.jsonl` records every error pattern the agent has diagnosed. Delete this file to re-analyse previously seen errors.
 - **MCP config restart** — after clicking "Auto-configure Claude Desktop", fully quit Claude Desktop (File → Quit or right-click tray → Quit; closing the window is not enough) and reopen it.
 - **OpenAI / Gemini** — the MCP server runs locally via stdio and is only accessible to Claude Desktop. Cloud-based AI services cannot connect to a local MCP server directly; they would require the server to be exposed via a public HTTPS endpoint.
+
+---
+
+## Disclaimer
+
+This software is provided **"as is"** under the [MIT Licence](../LICENSE), without warranty of any kind. By installing or running it you accept the following terms.
+
+**Your Notion data is never modified.** This app creates a read-only local mirror of your Notion workspace. It does not create, edit, delete, or move any page or database in Notion. That said, you remain solely responsible for maintaining your own backups of your Notion workspace. The author accepts no liability for data loss, data corruption, sync gaps, or unauthorised access to your Notion account or its contents.
+
+**The self-healing agent modifies source files.** When sync errors occur and an Anthropic API key is configured, the self-healing agent (powered by Claude Opus 4.7) may autonomously read and overwrite Python source files inside `src/sync/` and `src/db/`. The author accepts no liability for unintended behaviour, data loss, or system changes caused by AI-generated code modifications. Disable this feature by setting `ANTHROPIC_HEALER_ENABLED=0` in `.env` if you prefer manual control.
+
+**Third-party services.** This app communicates with Notion's API and, if configured, Anthropic's API. You are responsible for your own compliance with their respective terms of service and acceptable-use policies. The author has no affiliation with Notion, Anthropic, or any other third-party service referenced in this project.
+
+**No guarantee of sync accuracy or completeness.** The local mirror may be incomplete or out of date due to Notion API rate limits, network errors, sync failures, or bugs. Do not treat the local database as your primary or sole copy of any data.
+
+**No warranty; no liability.** To the maximum extent permitted by applicable law, the author shall not be liable for any direct, indirect, incidental, special, consequential, or exemplary damages arising from the use of or inability to use this software, even if advised of the possibility of such damages.

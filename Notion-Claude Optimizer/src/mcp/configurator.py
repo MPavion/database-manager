@@ -28,8 +28,10 @@ _LEGACY_SERVER_NAMES = {
 
 # Path fragments that identify our app's scripts/executables
 _OUR_SCRIPT_FRAGMENTS = (
+    "Notion-Claude Optimizer",
     "NotionLocalSync",
     "notion_local_sync",
+    "notion_claude_optimizer",
     "business_brain_mcp",
     "server.py",
     "main.py",

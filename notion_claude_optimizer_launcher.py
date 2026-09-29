@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-APP_TITLE = "Database Manager Launcher"
+APP_TITLE = "Notion-Claude Optimizer Launcher"
 
 
 def show_message(message: str, title: str = APP_TITLE, error: bool = False) -> None:
@@ -20,9 +20,9 @@ def find_app_dir() -> Path | None:
     base_dir = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
     candidates = [
         base_dir,
-        base_dir / "NotionLocalSync",
+        base_dir / "Notion-Claude Optimizer",
         base_dir.parent,
-        base_dir.parent / "NotionLocalSync",
+        base_dir.parent / "Notion-Claude Optimizer",
     ]
 
     for candidate in candidates:
@@ -50,7 +50,7 @@ def main() -> int:
     app_dir = find_app_dir()
     if not app_dir:
         show_message(
-            "I couldn't find the NotionLocalSync app folder next to this launcher.\n\n"
+            "I couldn't find the Notion-Claude Optimizer app folder next to this launcher.\n\n"
             "Keep this .exe in the project folder, or in a subfolder inside it.",
             error=True,
         )

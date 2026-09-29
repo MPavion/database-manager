@@ -3,8 +3,8 @@ setlocal
 cd /d "%~dp0"
 
 echo.
-echo  Notion Local Sync
-echo  -----------------
+echo  Notion-Claude Optimizer
+echo  -----------------------
 
 set "PYTHON_EXE=venv\Scripts\python.exe"
 set "NEEDS_INSTALL=0"

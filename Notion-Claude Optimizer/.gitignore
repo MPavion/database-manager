@@ -4,8 +4,8 @@ __pycache__/
 venv/
 .env
 secret.key
-data/media/
-data/backups/
+data/
+!data/.gitkeep
 logs/
 results/
 .DS_Store

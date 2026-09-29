@@ -197,6 +197,18 @@ def normalize_workspace_page_json(page: dict | None) -> tuple[dict, list[str]]:
     return normalized, issues
 
 
+def _extract_item_id(item) -> str | None:
+    """Return an id from a relation/mention list item that may be a dict or a raw string."""
+    if isinstance(item, dict):
+        candidate = item.get("id")
+        if isinstance(candidate, str):
+            return candidate
+        return None
+    if isinstance(item, str):
+        return item
+    return None
+
+
 def build_page_link_index(page: dict | None) -> dict:
     page, _ = normalize_workspace_page_json(page)
     page_id = normalize_notion_id(page.get("id"))
@@ -228,13 +240,21 @@ def build_page_link_index(page: dict | None) -> dict:
     def walk(value):
         if isinstance(value, dict):
             if value.get("type") == "relation":
-                for item in value.get("relation", []):
-                    add_link(item.get("id"), source="relation")
+                relation_items = value.get("relation")
+                if isinstance(relation_items, list):
+                    for item in relation_items:
+                        item_id = _extract_item_id(item)
+                        if item_id:
+                            add_link(item_id, source="relation")
 
             if value.get("type") == "mention":
                 mention = value.get("mention") or {}
-                if mention.get("type") == "page":
-                    add_link((mention.get("page") or {}).get("id"), source="mention")
+                if isinstance(mention, dict) and mention.get("type") == "page":
+                    page_ref = mention.get("page")
+                    if isinstance(page_ref, dict):
+                        add_link(page_ref.get("id"), source="mention")
+                    elif isinstance(page_ref, str):
+                        add_link(page_ref, source="mention")
 
             href = value.get("href")
             if isinstance(href, str):
@@ -246,11 +266,14 @@ def build_page_link_index(page: dict | None) -> dict:
                 for found_id in extract_notion_ids_from_url(url_value):
                     add_link(found_id, url_value, source="url")
 
-            text_link = (value.get("text") or {}).get("link") or {}
-            if isinstance(text_link.get("url"), str):
-                link_url = text_link.get("url")
-                for found_id in extract_notion_ids_from_url(link_url):
-                    add_link(found_id, link_url, source="url")
+            text_field = value.get("text")
+            if isinstance(text_field, dict):
+                text_link = text_field.get("link")
+                if isinstance(text_link, dict):
+                    link_url = text_link.get("url")
+                    if isinstance(link_url, str):
+                        for found_id in extract_notion_ids_from_url(link_url):
+                            add_link(found_id, link_url, source="url")
 
             for nested in value.values():
                 walk(nested)

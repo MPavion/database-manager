@@ -10,7 +10,7 @@ if not exist "venv\Scripts\python.exe" (
 
 call venv\Scripts\activate.bat || exit /b 1
 
-echo Starting Notion Local Sync...
+echo Starting Notion-Claude Optimizer...
 echo No terminal input is required. The app opens in the system tray near the clock.
 python -m src.main
 

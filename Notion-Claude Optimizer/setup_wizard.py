@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Notion Local Sync — First-time setup wizard.
+Notion-Claude Optimizer — First-time setup wizard.
 
 Called automatically by setup_and_run.bat on first launch, or with --wizard to reconfigure.
 Requires the virtual environment to be active (setup_and_run.bat handles this).
@@ -126,7 +126,7 @@ def check_prerequisites():
 def setup_notion() -> str:
     _step(2, "Notion integration token")
 
-    _info("Notion Local Sync needs permission to read your workspace.")
+    _info("Notion-Claude Optimizer needs permission to read your workspace.")
     _info("You grant this by creating an 'Integration' in Notion — it takes 2 minutes.")
     print()
     _info("What to do:")
@@ -444,7 +444,7 @@ def summary():
     print("    • Open Settings to change any configuration")
     print("    • Quit the app")
     print()
-    print("  Logs: NotionLocalSync\\logs\\app.log")
+    print("  Logs: Notion-Claude Optimizer\\logs\\app.log")
     print()
     _hr("═")
     print()

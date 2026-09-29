@@ -33,7 +33,14 @@ from src.db.database import DatabaseManager
 load_config()
 
 _MCP_INSTRUCTIONS = """
-You are connected to a local mirror of the user's Notion workspace.
+You are connected to Notion-Claude Optimizer — a local mirror of the user's Notion
+workspace that has been stripped of UI clutter and restructured purely for AI access.
+
+WHY THIS IS FASTER THAN QUERYING NOTION DIRECTLY:
+  - Search latency:   ~30ms vs 500ms–2,000ms  →  up to 98% faster
+  - Token cost:       ~200 tokens vs 2,000–8,000 per discovery query  →  up to 97% less
+  - Keyword index:    every page pre-indexed with AI-extracted tags (zero extra API calls)
+  - Works offline:    yes, with automatic fallback to the live Notion API if needed
 
 READING — always use these tools instead of calling Notion directly:
   1. get_stats()          confirm the mirror is live and how fresh it is
@@ -48,11 +55,6 @@ WRITING — never write through this MCP server. For any Notion edits (new pages
 updates, status changes), use Claude Desktop's native Notion integration. This preserves
 page layout, block structure, and links. The local mirror picks up the changes on the
 next sync cycle (every few minutes).
-
-The local DB is significantly faster and cheaper than the Notion API:
-  - Search latency:  ~30ms vs 500ms–2s
-  - Token cost:      ~200 tokens vs 2,000–8,000 for discovery queries
-  - Works offline:   yes, with automatic fallback to the live Notion API if needed
 """.strip()
 
 mcp = FastMCP(

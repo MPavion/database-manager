@@ -124,7 +124,7 @@ def _set_status(lbl: QLabel, ok: bool, text: str):
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Notion Local Sync — Settings")
+        self.setWindowTitle("Notion-Claude Optimizer — Settings")
         self.setMinimumWidth(520)
         self.setModal(True)
 

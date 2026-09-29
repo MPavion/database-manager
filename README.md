@@ -67,7 +67,7 @@ Your Notion workspace
 
 ```powershell
 git clone https://github.com/MPavion/Database-Manager.git
-cd "Database Manager\NotionLocalSync"
+cd "Database Manager\Notion-Claude Optimizer"
 ```
 
 Or download the ZIP from GitHub and extract it.
@@ -159,14 +159,14 @@ See **[WEAVE.md](WEAVE.md)** — a step-by-step guide for beginners on how to:
 
 ## Detailed documentation
 
-- [NotionLocalSync/README.md](NotionLocalSync/README.md) — full technical reference, configuration options, project layout
-- [NotionLocalSync/CLAUDE.md](NotionLocalSync/CLAUDE.md) — MCP integration details and query patterns
+- [Notion-Claude Optimizer/README.md](Notion-Claude Optimizer/README.md) — full technical reference, configuration options, project layout
+- [Notion-Claude Optimizer/CLAUDE.md](Notion-Claude Optimizer/CLAUDE.md) — MCP integration details and query patterns
 
 ---
 
 ## Contributing
 
-Issues and pull requests are welcome. See [NotionLocalSync/README.md](NotionLocalSync/README.md) for the project layout and architecture notes.
+Issues and pull requests are welcome. See [Notion-Claude Optimizer/README.md](Notion-Claude Optimizer/README.md) for the project layout and architecture notes.
 
 ---
 

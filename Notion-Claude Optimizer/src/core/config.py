@@ -19,7 +19,7 @@ APP_LOG    = LOG_DIR / "app.log"
 
 IMAGE_EXTENSIONS         = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".ico")
 WINDOWS_RUN_KEY          = r"Software\Microsoft\Windows\CurrentVersion\Run"
-WINDOWS_STARTUP_VALUE    = "NotionLocalSync"
+WINDOWS_STARTUP_VALUE    = "Notion-Claude Optimizer"
 
 _SecurityManager = None
 
@@ -51,7 +51,7 @@ DEFAULT_ENV = {
     # Media proxy
     "MEDIA_PROXY_PORT":       "8080",
     # App
-    "APP_DISPLAY_NAME":       "Notion Local Sync",
+    "APP_DISPLAY_NAME":       "Notion-Claude Optimizer",
     "APP_VERSION":            "3.0",
     "CLAUDE_MCP_NAME":        "Notion Local DB",
     "CLAUDE_MCP_LAST_NAME":   "",
@@ -158,7 +158,7 @@ def save_secret(key: str, value: str, encrypted_key: str | None = None):
 
 # ── Accessors ─────────────────────────────────────────────────────────────────
 def get_app_display_name() -> str:
-    return (get_env("APP_DISPLAY_NAME") or "Notion Local Sync").strip()
+    return (get_env("APP_DISPLAY_NAME") or "Notion-Claude Optimizer").strip()
 
 
 def get_claude_mcp_name() -> str:

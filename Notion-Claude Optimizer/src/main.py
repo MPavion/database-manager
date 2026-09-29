@@ -45,7 +45,7 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
     # Instance lock — prevents duplicate tray icons
-    lock_path = str(BASE_DIR / "notion_local_sync.lock")
+    lock_path = str(BASE_DIR / "notion_claude_optimizer.lock")
     lock      = QLockFile(lock_path)
     try:
         stale_ms = max(1, int(str(
